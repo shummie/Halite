@@ -20,6 +20,7 @@
 # --                       Idea: Can we expand multi-attacking into a cell to also look and see if we can capture a cell by moving units INTO adjacent cells??
 # Version 5: Rewrote heuristic function. Tries not to overvalue expanding into cells bordering enemy territory too much.
 
+import math
 from collections import namedtuple
 from itertools import chain, zip_longest, count
 import sys
@@ -100,6 +101,16 @@ def find_nearest_enemy_direction(square):
     dir_distance.sort(key = lambda x: x[1]) # Then sort by distance. Python's sorts are stable so production order is preserved.
     
     return dir_distance[0][0]
+    
+def go_to_border(square):
+    # Uses the production influence map to guide where to go
+    target = (None, 0)
+    for x in game_map.width:
+        for y in game_map.height:
+            distance = distance_between(x, y, square.x, square.y)
+            scaled_value = game_map.influence_npc_production_map[y, x] / distance
+            if target[1]
+    
     
     
 def get_move(square, buildup_multiplier = 5):
@@ -202,10 +213,10 @@ def prevent_overstrength():
 def distance_between(x1, y1, x2, y2):
     dx = abs(x1 - x2)
     dy = abs(y1 - y2)
-    if dx > width / 2:
-        dx = width - dx
-    if dy > height / 2:
-        dy = height - dy
+    if dx > game_map.width / 2:
+        dx = game_map.width - dx
+    if dy > game_map.height / 2:
+        dy = game_map.height - dy
     return dx + dy
     
 def border_value2(cell):
@@ -476,7 +487,7 @@ class GameMap:
     def create_production_influence_map(self):
         # Lots of tweaking to do...
         # Start with a basic prod/strength evaluation for npc cells
-        decay = 0.20
+        decay = 0.50
         self.influence_npc_production_map = numpy.zeros((self.height, self.width))
         for x in self.width:
             for y in self.height:
