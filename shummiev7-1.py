@@ -105,11 +105,14 @@ def find_nearest_enemy_direction(square):
 def go_to_border(square):
     # Uses the production influence map to guide where to go
     target = (None, 0)
-    for x in game_map.width:
-        for y in game_map.height:
-            distance = distance_between(x, y, square.x, square.y)
+    for x in range(game_map.width):
+        for y in range(game_map.height):
+            logging.debug(str(x))
+            distance = max(1, distance_between(x, y, square.x, square.y))
             scaled_value = game_map.influence_npc_production_map[y, x] / distance
-            if target[1]
+            if scaled_value > target[1]:
+                target = (game_map.contents[y][x], scaled_value)
+    game_map.move_to_target(square, target[0])
     
     
     
@@ -118,7 +121,7 @@ def get_move(square, buildup_multiplier = 5):
 
     border = False    
     targets = []
-    
+    logging.debug("aaa")
     # We don't consider STILL. Are there situations where staying still would result in MORE strength? Would this require simulating enemy movements?
     for d in (NORTH, EAST, SOUTH, WEST):
         target = game_map.get_target(square, d)
@@ -128,21 +131,25 @@ def get_move(square, buildup_multiplier = 5):
             targets.append((target, val))
     
     targets.sort(key = lambda x: x[1], reverse = True)  # Sorts the targets from high to low based on the heuristic
-    
+    logging.debug(targets)
     # We have a list of values for all adjacent cells. If targets is not none, let's see what we can do.
     if len(targets) > 0:
         # Go through the list and see if we can attack one.
         for t in targets:
             if t[0].strength < square.strength:
+                logging.debug(t[0])
                 return game_map.move_to_target(square, t[0], False)
-                
+    logging.debug("??")            
     # If we don't have enough strength to make it worth moving yet, stay still
     #if square.strength < max(15, (square.production * buildup_multiplier)):
     if square.strength < (square.production * buildup_multiplier):
+        logging.debug("no str")
         game_map.make_move(square, STILL)
     # If we aren't at a border, move towards the closest one
     elif not border:
-        game_map.make_move(square, find_nearest_enemy_direction(square))
+        logging.debug("Hi")
+        go_to_border(square)
+        #game_map.make_move(square, find_nearest_enemy_direction(square))
     # Else, we're at a border, don't have the strength to attack anyone adjacent, and have less than the buildup multiplier
     # Can we combine forces with an adjacent cell to capture another cell?
     else: 
@@ -489,11 +496,11 @@ class GameMap:
         # Start with a basic prod/strength evaluation for npc cells
         decay = 0.50
         self.influence_npc_production_map = numpy.zeros((self.height, self.width))
-        for x in self.width:
-            for y in self.height:
+        for x in range(self.width):
+            for y in range(self.height):
                 if self.owner_map[y, x] == 0:
-                    for i in self.width:
-                        for j in self.height:
+                    for i in range(self.width):
+                        for j in range(self.height):
                             
                             prod_value = self.production_map[y, x] 
                             str_value = self.strength_map[y, x]
@@ -688,10 +695,13 @@ send_init("shummie v7.1")
 
 
 while True:
+    logging.debug("no")
     game_map.get_frame()
     #logging.debug("Frame: " + str(game_map.frame) + "\n")
     # Have each individual square decide on their own movement
+    logging.debug("Making influence map")
     game_map.create_production_influence_map()
+    logging.debug("production influence map done")
     square_move_list = []
     for square in game_map:
         if square.owner == game_map.my_id: 
@@ -702,10 +712,12 @@ while True:
     percent_owned = len(square_move_list) / (game_map.width * game_map.height)
 
     for square in square_move_list:
+        logging.debug("Hi2")
         get_move(square)
     # Project the state of the board assuming for now that enemy pieces do not move    
     #game_map.create_projection()    
     # Do stuff
+    logging.debug("step3")
     attack_border_multiple_pieces()
     #consolidate_strength()
     #if game_map.frame < 10:
@@ -714,16 +726,16 @@ while True:
     #    consolidate_strength(2)
     #elif game_map.frame < 40:
     consolidate_strength(1)
-    
+    logging.debug("step4")
     over_count = game_map.width * game_map.height
     
     new_over_count = prevent_overstrength()
-    
+    logging.debug("step5")
     while new_over_count < over_count:
         over_count = new_over_count
         new_over_count = prevent_overstrength()
-    
+    logging.debug("step6")
     moves = game_map.get_moves()
-    
+    logging.debug("step7")
     send_frame(moves)
     
