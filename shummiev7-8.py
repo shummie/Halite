@@ -39,8 +39,8 @@ import random
 #############
 
 botname = "shummie v7.8"
-production_decay = 0.60
-production_influence_max_distance = 5
+production_decay = 0.4
+production_influence_max_distance = 8
 buildup_multiplier = 5
 strength_buffer = 0
 
@@ -377,18 +377,21 @@ class GameMap:
             if square.is_npc_border():
                 border_squares.append((square, heuristic(square)))
                 
-        border_squares.sort(key = lambda x: x[1], reverse = True) # Sorts by all border cells which will not be taken next turn by the heuristic above.        
+        #border_squares.sort(key = lambda x: x[1], reverse = True) # Sorts by all border cells which will not be taken next turn by the heuristic above.        
+        self.border_square_list.sort(key = lambda x: heuristic(x), reverse = True)
 
         distance = 1
         while distance <= cells_out:
-            self.consolidate_n_out(border_squares, distance)
+            #self.consolidate_n_out(border_squares, distance)
+            self.consolidate_n_out(distance)
             distance += 1
     
-    def consolidate_n_out(self, border_squares_list, cells_out):
+    def consolidate_n_out(self, cells_out):
         # For each border_square, we want to look at each friendly neighbor and see if we can take over this square in cells_out turns from now.
         
-        for border_square_tuple in border_squares_list:
-            border_square = border_square_tuple[0]
+        #for border_square_tuple in border_squares_list:
+        for border_square in self.border_square_list:
+            #border_square = border_square_tuple[0]
             # Get a list of all friendly neighbors to this square: These are the TARGET squares to move to.
             friendly_neighbors = [x for x in border_square.neighbors() if x.owner == self.my_id]
             
@@ -564,9 +567,9 @@ class Square:
                 elif n.owner == self.game_map.my_id:
                     # Do not assign any influence for cells we own
                     prod_n = 0
-                    str_value = 1 # This doesn't matter i think since value will just equal 0
+                    str_value = 1 # This shouldn't matter since value will just equal 0
                 else:
-                    # If we want to do something differently with strengths in enemy terrotiry, we can alter it here.
+                    # If we want to do something differently with strengths in enemy territory, we can alter it here.
                     str_value = max(1, n.strength)
                 
                 decay_factor = math.exp(-production_decay * distance)
