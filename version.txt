@@ -1,0 +1,66 @@
+History
+--------
+Version 9.0 - ??? / ??? - December 9, 2016
+* Added a separate early game heuristic
+* Changed the overstrength code to occur when attempting to move to a target. 
+* Attempts to chain when using the move_to_target overstrength code.
+* Tweaks to parameters. This will take a lot more future work to enhance.
+
+Version 8.0 - 93 / 939 - December 7, 2016
+* Fix a timeout bug, hopefully... Spread was taking up too much time so limit how far we go
+
+Version 7.0 - 143 / 906 - December 7, 2016
+* MAJOR CODE REWRITE!
+* Complete code refactoring. 
+  Square is a class that contains information on a square. 
+  GameMap contains all functions related to the game
+* Utilize numpy for a lot of information storage. Adopt some clever tricks from Declan.
+* Complete overhaul of the AI Engine. Older version had each cell evaluate what the best move was and then have it greedily perform the move. A coordinator then tries to prevent pieces from clashing.
+  Now, instead of each square acting independently, a strategy AI looks at all available squares to capture, then tries to see what squares are available to capture that square. Once that is complete, then the individual square AI is allowed to make whatever move it deems best.
+  Right now, there is still a check at the end to consider whether or not there is going to be strength clashing. A future enhancement is to have the square decide if it should move into it then try to find an alternative path?
+* A lot of the heuristic functions can now be tweaked utilizing parameters. Adjusting these is a todo as right now they are selected completely judgementally and hopefully enough to beat the prior version's code.
+
+Version 6.0 - 62 / 853 - December 3, 2016
+* Applied heuristic function to attacking by using multiple pieces
+
+Version 5.0 - 65 / 853 - December 3, 2016
+* heuristic function changes:
+  Tries not to overvalue expanding into cells bordering enemy territory too much.
+  Don't try to capture territory which is already being taken over.
+  
+Version 4.0 - 73 / 848 - December 3, 2016
+* move_to_target: old implementation might move into uncontrolled territory. Not good. 
+  New implementation moves only though adjacent owned territory, if possible. If multiple routes exist, then it takes the direction with the lowest production.
+* consolidate_strength: Split into two subroutines. One which is the old multi-attacker into a cell, the other looks outwards to gather strength to attack a cell.
+
+Version 3.0 - 74 / 848 - December 3, 2016
+* Failed compilation - skip version
+
+Version 2.0 - 74 / 848 - December 2, 2016
+* Moved hlt file to single file. 
+* consolidate_strength: Completely rewritten. Searches all border tiles and then sees if we can consolidate. Ranked by production strength, then sees if we can consolidate.
+* find_nearest_enemy_direction: Calculate ALL distances, and pick the shortest with lowest production if there is a tie. Otherwise, pick randomly.
+* heuristic: look at not just the cell but adjacent cells to determine the value of capturing the cell.
+* smallest strength cells move first. 
+
+Version 1.0 - 136 / 828 - December 1, 2016
+* First attempt at something that's better than the basic tutorial bots
+
+
+name            last_seen               rank    skill           mu              sigma           ngames  active
+v7-11-9-5       07.12.2016 06:55:35     1       26.997977       29.243923       0.748649        119 1
+v7-11-9-4       07.12.2016 06:50:59     2       25.341659       27.599776       0.752706        107 1
+v6      07.12.2016 06:55:35     3       25.225261       27.450274       0.741671        103     1
+v7-11-9-3       07.12.2016 06:55:58     4       25.205160       27.429473       0.741438        94  1
+v5      07.12.2016 06:49:04     5       24.983046       27.192066       0.736340        99      1
+v7-11-6 07.12.2016 06:48:17     6       24.856111       27.085475       0.743121        92      1
+v7-11-9-1       07.12.2016 06:50:46     7       24.603269       26.799098       0.731943        98  1
+v7-11-5 07.12.2016 06:46:44     8       24.392356       26.635722       0.747789        105     1
+v7-11-9-2       07.12.2016 06:37:26     9       24.098350       26.312141       0.737931        105 1
+v7-11-9 07.12.2016 06:50:59     10      23.494119       25.733924       0.746601        98      1
+v7-11-4 07.12.2016 06:57:58     11      22.401090       24.626962       0.741958        103     1
+v7-11-7 07.12.2016 06:55:35     12      22.288098       24.453165       0.721689        96      1
+v7-11-3 07.12.2016 06:26:11     13      21.696648       23.928488       0.743946        92      1
+v7-11   07.12.2016 06:57:58     14      20.744205       22.961294       0.739030        112     1
+v7-11-2 07.12.2016 06:49:04     15      18.375001       20.610889       0.745296        116     1
+v7-10-3 07.12.2016 06:57:58     16      15.969250       18.265493       0.765414        174     1

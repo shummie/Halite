@@ -20,14 +20,14 @@ import random
 # Variables #
 #############
 
-botname = "shummie v9.13.10"
+botname = "shummie v9.13.5"
 
 production_decay = 0.5
 production_influence_max_distance = 8
-buildup_multiplier = 7
-early_game_buildup_multiplier = 7
-early_game_value_threshold = 0.66
-strength_buffer = 25
+buildup_multiplier = 8
+early_game_buildup_multiplier = 8
+early_game_value_threshold = 0.65
+strength_buffer = 35
 
 production_self_factor = -0.5
 production_neutral_factor = 1.25
@@ -530,7 +530,7 @@ class GameMap:
             if (square.move == -1 or square.move == STILL):
                 # Try to move into another square which is moving into us
                 if len(square.moving_here) > 0:
-                    square.move_to_target(random.choice(square.moving_here).target, False)
+                    square.move_to_target(random.choice(square.moving_here), True)
             else:
                 # We are moving but the squares that are moving into here are going to collide.
                 # See if we can reroute one of them perpendicular to where they are going, going the opposite direction is likely guaranteed to be counter productive
@@ -668,44 +668,19 @@ class Square:
         
         possible_target = self.game_map.get_target(self, possible_moves[0][0])
         if possible_target.move == -1: # If it's staying STILL, then it's likely doing so for a reason so don't mess with it
-            # Can we tell them to go to our target?
-            # If friendly:
-            if self.target.owner == self.game_map.my_id:
-                success = possible_target.move_to_target(self.target, True)
-                if success:
+            # Check if we can move them into this square
+            if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
+                # Yes we can, swap!
+                self.game_map.make_move(possible_target, opposite_direction(possible_moves[0][0]))
+                self.game_map.make_move(self, possible_moves[0][0])
+                return True
+            elif possible_moves[0][2] == possible_moves[1][2]: # Ok, was the 2nd move option a possibility?
+                possible_target = self.game_map.get_target(self, possible_moves[1][0])
+                if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
+                # Yes we can, swap!
+                    self.game_map.make_move(possible_target, opposite_direction(possible_moves[1][0]))
+                    self.game_map.make_move(self, possible_moves[1][0]) 
                     return True
-                else:
-                    # Check if we can move them into this square
-                    if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                        self.game_map.make_move(possible_target, opposite_direction(possible_moves[0][0]))
-                        self.game_map.make_move(self, possible_moves[0][0])
-                        return True
-                    elif possible_moves[0][2] == possible_moves[1][2]: # Ok, was the 2nd move option a possibility?
-                        possible_target = self.game_map.get_target(self, possible_moves[1][0])
-                        if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                            self.game_map.make_move(possible_target, opposite_direction(possible_moves[1][0]))
-                            self.game_map.make_move(self, possible_moves[1][0]) 
-                            return True
-            else:
-                success = possible_target.move_to_target(self.target, False)
-                if success: 
-                    return True
-                else:
-                    # Check if we can move them into this square
-                    if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                        self.game_map.make_move(possible_target, opposite_direction(possible_moves[0][0]))
-                        self.game_map.make_move(self, possible_moves[0][0])
-                        return True
-                    elif possible_moves[0][2] == possible_moves[1][2]: # Ok, was the 2nd move option a possibility?
-                        possible_target = self.game_map.get_target(self, possible_moves[1][0])
-                        if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                            self.game_map.make_move(possible_target, opposite_direction(possible_moves[1][0]))
-                            self.game_map.make_move(self, possible_moves[1][0]) 
-                            return True                    
         
         # Ok... So, we can't move to another direction without moving further AND the other cell is moving. Just stay still then.
         return False
@@ -858,6 +833,8 @@ def first_turns_heuristic3():
     for square in game_map:
         if square.is_npc_border():
             border_squares.append((square, get_future_value(square, 5)))
+        if game_map.influence_enemy_strength_map_1[square.x, square.y] > 0:
+            game_map.early_game = False
     border_squares.sort(key = lambda x: x[1], reverse = True)
     
     find_cell = True
@@ -901,12 +878,12 @@ def get_future_value_rec(square, squares_out, max_dist):
         if square.owner == game_map.my_id: 
             return 0
         else:
-            return square.production / max(square.strength, 0.001)
+            return square.production / max(square.strength, 1)
     else:
         neighbor_vals = []
         this_square_val = 0
         if square.owner != game_map.my_id:
-            this_square_val = (square.production / max(square.strength, 0.001))
+            this_square_val = (square.production / max(square.strength, 1))
         for n in square.neighbors():
             neighbor_vals.append(get_future_value_rec(n, squares_out + 1, max_dist))
         return this_square_val + max(neighbor_vals)        
@@ -983,7 +960,7 @@ def game_loop():
     #    logging.debug("enemy_str_controlled_3")
     #    logging.debug(game_map.influence_enemy_territory_map_3)
         
-    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
+    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / (15*(game_map.starting_player_count**.5)) and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
         first_turns_heuristic3()
     else:
         game_map.early_game = False

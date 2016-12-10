@@ -1,27 +1,8 @@
 # TODO LIST:
 # -- Dijkstra's Algorithm for pathfinding?
-# -- Look at more than 1 cell deep to see if we can capture territory earlier?
 # -- How to identify which direction to focus growth? Looking at production map at beginning to see.
 # -- Attack patterns? What's the best strategy for attacking / retreating / reinforcing?
-# -- Varying production multiplier by distance to border?
-
-# Version 1: Basic bot implementation - Modifications from random bot: To be added
-# Version 2: 
-# -- Moved hlt file to single file. 
-# -- consolidate_strength: Completely rewritten. Searches all border tiles and then sees if we can consolidate. Ranked by production strength, then sees if we can consolidate.
-# -- find_nearest_enemy_direction: Calculate ALL distances, and pick the shortest with lowest production if there is a tie. Otherwise, pick randomly.
-# -- heuristic: look at not just the cell but adjacent cells to determine the value of capturing the cell.
-# -- smallest strength cells move first. 
-# Version 3: Uploaded incorrectly
-# Version 4:
-# -- move_to_target: old implementation might move into uncontrolled territory. Not good. New implementation moves only though adjacent owned territory, if possible. If multiple
-#                    routes exist, then it takes the direction with the lowest production.
-# -- consolidate_strength: Split into two subroutines. One which is the old multi-attacker into a cell, the other looks outwards to gather strength to attack a cell.
-# --                       Idea: Can we expand multi-attacking into a cell to also look and see if we can capture a cell by moving units INTO adjacent cells??
-# Version 5: Rewrote heuristic function. Tries not to overvalue expanding into cells bordering enemy territory too much.
-# Version 6: ??
-# Version 7: Rewrote move to border function. Now squares will try to move towards higher production cells instead of the nearest border.
-# -- Complete code overhaul. Remove GameMap class, add Square class.
+# -- Very early game production focus strategy
 
 ###########
 # Imports #
@@ -38,20 +19,32 @@ import random
 # Variables #
 #############
 
-botname = "shummie v7.9"
-production_decay = 0.4
+botname = "shummie v7.11-7"
+
+production_decay = 0.5
 production_influence_max_distance = 10
 buildup_multiplier = 5
 strength_buffer = 0
 
-production_self_modifier = 0
-production_neutral_modifier = 1
-production_enemy_modifier = 1
-production_influence_factor = 0.5
-prod_over_str_self_modifier = 0
-prod_over_str_neutral_modifier = 1
-prod_over_str_enemy_modifier = 0.5
-        
+production_self_factor = 0
+production_neutral_factor = 1
+production_enemy_factor = 1.5
+production_influence_factor = 0.2 # Sample values are around 50-80
+production_square_influence_factor = 2
+prod_over_str_influence_factor = 20 # Sample values are around 0.5 - 1.0
+prod_over_str_self_factor = 0
+prod_over_str_neutral_factor = 1
+prod_over_str_enemy_factor = 2
+enemy_strength_0_influence_factor = 2   
+enemy_strength_1_influence_factor = 2 # Sample values around 4-20
+enemy_strength_2_influence_factor = .5 # Sample values around 2-40
+enemy_strength_3_influence_factor = 0.25 # Sample values around 2-50
+border_distance_decay_factor = 2
+border_target_percentile = 0.75
+enemy_territory_1 = 0
+enemy_territory_2 = 0
+enemy_territory_3 = 0
+
         
 #################
 # GameMap Class #
@@ -97,7 +90,8 @@ class GameMap:
         self.starting_player_count = numpy.amax(self.owner_map) # Note, for range you'd need to increase the range by 1
         
         self.next_uncapped_strength_map = numpy.zeros((self.starting_player_count + 1, self.width, self.height))
-        
+        # Create the distance map
+        self.create_distance_map()        
         # Send the botname
         send_string(botname)
         
@@ -148,8 +142,6 @@ class GameMap:
         return itertools.chain.from_iterable(self.squares)
     
     def create_maps(self):
-        # Create the distance map
-        self.create_distance_map()
         
         # Create is_owner maps
         self.create_is_owner_map()
@@ -226,7 +218,7 @@ class GameMap:
         self.influence_production_map = numpy.zeros((self.width, self.height))
         
         # Take the base production map and alter it based on who controls it
-        modified_production_map = numpy.multiply(self.production_map, self.is_owner_map[self.my_id]) * production_self_modifier + numpy.multiply(self.production_map, self.is_owner_map[0]) * production_neutral_modifier + numpy.multiply(self.production_map, self.is_enemy_map) * production_enemy_modifier
+        modified_production_map = numpy.multiply(self.production_map, self.is_owner_map[self.my_id]) * production_self_factor + numpy.multiply(self.production_map, self.is_owner_map[0]) * production_neutral_factor + numpy.multiply(self.production_map, self.is_enemy_map) * production_enemy_factor
         
         # Diffuse the production map so that high strength areas might be targeted.
         self.influence_production_map = spread(modified_production_map, production_decay)
@@ -244,28 +236,23 @@ class GameMap:
         self.influence_enemy_strength_map_2 = spread_n(enemy_strength_map, 2)
         self.influence_enemy_strength_map_3 = spread_n(enemy_strength_map, 3)
         
+        self.influence_enemy_territory_map_1 = numpy.minimum(self.influence_enemy_strength_map_1, 1)
+        self.influence_enemy_territory_map_2 = numpy.minimum(self.influence_enemy_strength_map_2, 1)
+        self.influence_enemy_territory_map_3 = numpy.minimum(self.influence_enemy_strength_map_3, 1)
+        
     def create_influence_prod_over_str_map(self):
         # Creates an influence map based off of production / strength. Very similar to the influence_production_map
         self.influence_prod_over_str_map = numpy.zeros((self.width, self.height))
         
         # Calculate the production / str maps.
-        prod_str_map = numpy.divide(self.production_map, numpy.minimum(1, self.strength_map))
-        prod_str_map = numpy.multiply(prod_str_map, self.is_owner_map[self.my_id]) * prod_over_str_self_modifier + numpy.multiply(prod_str_map, self.is_owner_map[0]) * prod_over_str_neutral_modifier + numpy.multiply(prod_str_map, self.is_enemy_map) * prod_over_str_enemy_modifier
+        prod_str_map = numpy.divide(self.production_map, numpy.maximum(1, self.strength_map))
+        scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owner_map[self.my_id]) * prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_owner_map[0]) * prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * prod_over_str_enemy_factor
         
         # Diffuse the production map so that high strength areas might be targeted.
-        self.influence_prod_over_str_map = spread(prod_str_map, production_decay)
+        self.influence_prod_over_str_map = spread(scaled_prod_str_map, production_decay)
     
         self.influence_prod_over_str_map -= numpy.multiply(self.influence_prod_over_str_map, self.is_owner_map[self.my_id])
         
-        
-    def is_npc_border(self, square):
-        # Looks at a square and sees if it's an NPC border square
-        # Defined as a square which is owned by 0 and has a neighbor of my_id
-        if square.owner != 0: return False
-        for n in self.neighbors(square):
-            if n.owner == self.my_id:
-                return True
-        return False
         
     def get_distance(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -318,57 +305,124 @@ class GameMap:
                     direction = self.move_map[x, y]
                     dx, dy = ((0, -1), (1, 0), (0, 1), (-1, 0))[int(direction)]
                     self.next_uncapped_strength_map[owner, (x + dx) % self.width, (y + dy) % self.height] += self.strength_map[x, y]
-
-
-                 
-
-    def get_best_move(self, square):
-        # For a given square, find the "best" move we can
-        border = False
-        
-        targets = []
-        for d in (NORTH, EAST, SOUTH, WEST):
-            target = game_map.get_target(square, d)
-            if target.owner != self.my_id:
-                border = True
-                val = heuristic(target, square)
-                targets.append((target, val))
-
-        targets.sort(key = lambda x: x[1], reverse = True) # Sorts targets from high to low
-        
-        # We have a list of all adjacent cells. If targets is not None, let's see what we can do
-        if len(targets) > 0:
-            # Go through the list and see if we can attack one
-            for t in targets:
-                if t[0].strength < square.strength:
-                    return square.move_to_target(t[0], False)
-                    
-        # if we don't have enough strength to make it worth moving yet, stay still
-        if square.strength < (square.production * buildup_multiplier):
-            # Don't actually set a cell to STILL unless we want it to stay still
-            return True
-        # If we aren't at a border, move towards the closest one
-        elif not border:
-            return self.find_nearest_enemy_direction(square)
-            #return self.go_to_border(square)
-        # Else, we're at a border, don't have the strength to attack another cell, and have less than the buildup multipler. Let other functions handle movement
-        else:
-            return True
     
+    def get_best_moves(self):
+        # Instead of each cell acting independently, look at the board as a whole and make squares move based on that.
+        
+        # Squares should always be moving towards a border. so get the list of border candidate squares
+        all_targets = []
+        for square in itertools.chain.from_iterable(self.squares):
+            if square.is_npc_border():
+                all_targets.append((square, heuristic(square)))
+                
+        # Are all cells equally valuable?
+        # Let's keep the top X% of cells. 
+        all_targets.sort(key = lambda x: x[1], reverse = True)
+        best_targets = all_targets[0:int(len(all_targets) * border_target_percentile)]
+        
+        # Ok now that we have a list of best targets, see if we can capture any of these immediately.
+        cells_out = 1
+        while cells_out <= 3:
+            for target in best_targets:
+                success_attack = self.attack_cell(target[0], cells_out)
+                if success_attack:
+                    best_targets.remove(target)
+            cells_out += 1
+        
+        # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
+        cells_to_consider_moving = []
+        for square in itertools.chain.from_iterable(self.squares):
+            # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
+            if square.owner == self.my_id and (square.move == STILL or square.move == -1):
+                cells_to_consider_moving.append(square)
+
+        # Simple logic for now:
+        for square in cells_to_consider_moving:
+            if square.is_border() == True:
+                # Can we attack a bordering cell?
+                targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
+                if len(targets) > 0:
+                    targets.sort(key = lambda x: heuristic(x), reverse = True)
+                    square.move_to_target(targets[0], False)
+            elif square.strength > (square.production * buildup_multiplier):
+                #self.go_to_border(square)
+                self.find_nearest_enemy_direction(square)
+        
+        # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.
+
+        
+    def attack_cell(self, target, cells_out = 1):
+        # Will only attack the cell if sufficient strength
+        # Otherwise, will attempt to move cells by cells_out so that it can gather enough strength.
+        # Returns True if we have successfully found something to attack this
+        # Returns False otherwise.
+
+        # Only need to look at surrounding cells
+        available_squares = (self.move_map == -1) * 1
+        distance_matrix = self.friendly_flood_fill(target, cells_out)
+        distance_matrix[distance_matrix == -1] = 0
+        
+        #available_strength = numpy.sum(numpy.multiply(numpy.multiply(numpy.multiply(self.is_owner_map[self.my_id], self.strength_map), numpy.minimum(distance_matrix, 1)), available_squares))            
+        available_strength = numpy.sum(numpy.multiply(numpy.multiply(self.strength_map, numpy.minimum(distance_matrix, 1)), available_squares))
+        
+        #logging.debug("avail str: " + str(available_strength))
+        # Consider production if all cells stay still.
+        distance_matrix = cells_out - distance_matrix
+        distance_matrix[distance_matrix == cells_out] = 0
+        available_production = numpy.sum(numpy.multiply(numpy.multiply(self.production_map, distance_matrix), available_squares))
+        #logging.debug("avail prod:" + str(available_production))
+
+        if available_strength + available_production > target.strength:
+            # We have sufficient strength! Let's attack.
+            # Get a list of all friendly neighbors
+            attacking_cells = [x for x in target.neighbors(cells_out) if x.owner == self.my_id and x.move == -1]
+            still_cells = []
+            if cells_out > 1:
+                still_cells = [x for x in target.neighbors(cells_out - 1) if x.owner == self.my_id and x.move == -1]
+            moving_cells = list(set(attacking_cells) - set(still_cells))
+            
+            # Ok, since we are doing this iteratively, we know that all cells in still_cells must stay still, otherwise an earlier cells_out would have worked
+            for square in still_cells:
+                self.make_move(square, STILL)
+            
+            # How much remaining strength do we need?
+            still_strength = numpy.sum(numpy.multiply(numpy.multiply(self.strength_map, numpy.minimum(distance_matrix, 1)), available_squares)) # Note this is the new distance map used for available_production
+            needed_strength_from_movers = target.strength - available_production - still_strength
+            
+            if needed_strength_from_movers > 0:
+                # We don't necessarily want the highest strength piece to capture this. But, if we start with the smallest, we might be wasting moves/production.
+                # See if we need more than 1 piece to capture.
+                moving_cells.sort(key = lambda x: x.strength, reverse = True)
+                for square in moving_cells:
+                    if cells_out == 1:
+                        square.move_to_target(target, False)
+                    else:
+                        square.move_to_target(target, True)
+                    needed_strength_from_movers -= square.strength
+                    if needed_strength_from_movers < 0:
+                        break
+                    
+            # Yay we're done.                        
+            return True
+        else:
+            return False
+
+            
     def go_to_border(self, square):
         # Going to do a simple search for the closest border then determine which of the 4 directions we should go
         
         #self.border_square_list.sort(key = lambda x: x.influence_production_npc() / (self.get_distance(square, x)**0.5), reverse = True)
         #self.border_square_list.sort(key = lambda x: x.influence_production_npc(), reverse = True)
         
-        self.border_square_list.sort(key = lambda x: self.influence_prod_over_str_map[x.x, x.y])
+        #self.border_square_list.sort(key = lambda x: self.influence_prod_over_str_map[x.x, x.y])
+        self.border_square_list.sort(key = lambda x: heuristic(x) / self.get_distance(square, x)**border_distance_decay_factor, reverse = True)
         
         if len(self.border_square_list) > 0:        
             return square.move_to_target(self.border_square_list[0], True)
         # If all cardinal directions are owned, is it possible to actually not move?
         # Move randomly then?
         #self.make_move(square, random.choice(range(1)))
-        self.make_move(square, random.choice(range(2)))
+        #self.make_move(square, random.choice(range(2)))
         
     def find_nearest_enemy_direction(self, square):
 
@@ -392,9 +446,35 @@ class GameMap:
         dir_distance.sort(key = lambda x: x[2]) # Sort by production
         dir_distance.sort(key = lambda x: x[1]) # Then sort by distance. Python's sorts are stable so production order is preserved.
         
-        self.make_move(square, dir_distance[0][0])
-        
-
+        square.move_to_target(self.get_target(square, dir_distance[0][0]), True)
+        #self.make_move(square, dir_distance[0][0])
+            
+    def friendly_flood_fill(self, source, up_to):
+        queue = [(source, 0)]
+        flood_fill_map = numpy.ones((self.width, self.height)) * -1
+        while len(queue) > 0:
+            target = queue.pop(0)
+            target_square = target[0]
+            if flood_fill_map[target_square.x, target_square.y] == -1:
+                # We haven't visited this yet.
+                flood_fill_map[target_square.x, target_square.y] = target[1]
+                # Add neighbors to the queue
+                if target[1] < up_to:
+                    # Not yet at the max distance, let's add friendly neighbors to the queue
+                    # Should we limit only to cells which are staying still? I think so... remove if it screws things up.
+                    neighbors = [n for n in target_square.neighbors() if n.owner == self.my_id and n.move == -1]
+                    for n in neighbors:
+                        queue.append((n, target[1] + 1))
+            else:
+                # We could have duplicates but visited the long way...
+                if flood_fill_map[target_square.x, target_square.y] > target[1]:
+                    # This is a shorter route. Replace!
+                    flood_fill_map[target_square.x, target_square.y] = target[1]
+                    # Need to add neighbors back in.
+                    neighbors = [n for n in target_square.neighbors() if n.owner == self.my_id and n.move == -1]
+                    for n in neighbors:
+                        queue.append((n, target[1] + 1))
+        return flood_fill_map
 
     def prevent_overstrength(self):
         # Tries to prevent wasting strength by having multiple cells move into the same square
@@ -443,108 +523,7 @@ class GameMap:
             
         return cells_over_count
 
-        
-    def attack_border_multiple_pieces(self):
-        # Looks to see if there are any border cells which can be attacked right now by multiple pieces at the same time.
-        # Looks only at cells whose move value is -1 and are bordering a neighboring cell.
-        border_squares = []
-        for square in itertools.chain.from_iterable(self.squares):
-            if square.is_npc_border():
-                border_squares.append((square, heuristic(square)))
-        
-        border_squares.sort(key = lambda x: x[1], reverse = True)
-        
-        for border_square in border_squares:
-            # For each border square, starting with the most valuable, attempt to capture it.
-            friendly_neighbors = [x for x in border_square[0].neighbors() if x.owner == self.my_id]
-            available_strength = 0
-            # TODO: There's a more pythonic way to do this instead of the loop below. 
-            for f in friendly_neighbors:
-                if f.move == -1:
-                    available_strength += f.strength
-            
-            if available_strength > border_square[0].strength:
-                attacking_strength = 0
-                for f in friendly_neighbors:
-                    if f.move == -1 and attacking_strength <= border_square[0].strength:
-                        attacking_strength += f.strength
-                        f.move_to_target(border_square[0], False)
-    
-    def consolidate_strength(self, cells_out = 1):
-        # Looks at border cells and sees if there is an opportunity to look N neighbors out to consolidate strength to capture a territory.
-        border_squares = []
-        for square in itertools.chain.from_iterable(self.squares):
-            if square.is_npc_border():
-                border_squares.append((square, heuristic(square)))
-                
-        #border_squares.sort(key = lambda x: x[1], reverse = True) # Sorts by all border cells which will not be taken next turn by the heuristic above.        
-        self.border_square_list.sort(key = lambda x: heuristic(x), reverse = True)
 
-        distance = 1
-        while distance <= cells_out:
-            #self.consolidate_n_out(border_squares, distance)
-            self.consolidate_n_out(distance)
-            distance += 1
-    
-    def consolidate_n_out(self, cells_out):
-        # For each border_square, we want to look at each friendly neighbor and see if we can take over this square in cells_out turns from now.
-        
-        #for border_square_tuple in border_squares_list:
-        for border_square in self.border_square_list:
-            #border_square = border_square_tuple[0]
-            # Get a list of all friendly neighbors to this square: These are the TARGET squares to move to.
-            friendly_neighbors = [x for x in border_square.neighbors() if x.owner == self.my_id]
-            
-            for f in friendly_neighbors:
-                # How much strength do we need and can we get it cells_out away?
-                needed_strength = border_square.strength
-                
-                moving_cells = False
-                
-                # Check friendly neighboring cells.
-                for distance_out in range(1, cells_out + 1):
-                    neighbor_strength = 0
-                    # Are we currently moving? If not, we can add this to the strength
-                    if f.move == -1:
-                        # While we can check if f.move == STILL, it's likely that it's STILL for a reason and we don't want to cause conflicts.
-                        neighbor_strength += (f.strength + (f.production * distance_out))
-                    f_neighbors = [x for x in f.neighbors(distance_out) if x.owner == self.my_id]
-                    # This returns a list of ALL neighbors between 1 and distance_out inclusive.
-                    f_neighbors_minus_one = []
-                    if distance_out > 1:
-                        f_neighbors_minus_one = [x for x in f.neighbors(distance_out - 1) if x.owner == self.my_id]
-                    f_neighbors_at_cells_out = list(set(f_neighbors) - set(f_neighbors_minus_one))
-                    # Ok, now we have a list of all cells AT distance_out and all cells LESS than distance_out
-                    # Why is this necessary? We only want to MOVE cells at distance_out and let all squares LESS than distance_out produce
-                    
-                    # Ok, first, check needed strength for all squares LESS than distance_out
-                    for f_n in f_neighbors_minus_one:
-                        if f_n.move == -1:
-                            neighbor_strength += f_n.strength + f_n.production * self.get_distance(f_n, f)
-                    # Now, check if moving neighbors will produce enough strength.
-                    needed_strength_at_cells_out = needed_strength - neighbor_strength
-                    for f_n in f_neighbors_at_cells_out:
-                        if f_n.move == -1:
-                            neighbor_strength += f_n.strength
-                    # Do we have enough strength?
-                    if neighbor_strength > needed_strength:
-                        # Yes! Let's move the outside squares towards f_n.
-                        f_neighbors_at_cells_out.sort(key = lambda x: x.strength, reverse = True)
-                        for f_n in f_neighbors_at_cells_out:
-                            if f_n.move == -1 and needed_strength_at_cells_out > 0:
-                                f_n.move_to_target(f, True) 
-                                # There may be edge cases where we can't actually move to a square, or that it takes more turns than expected. Might need to make a new function that looks at distance through friendly squares
-                                needed_strength_at_cells_out -= f_n.strength
-                        moving_cells = True
-                        if f.move == -1:
-                            self.make_move(f, STILL)
-                        # Stop looking any further out
-                        break
-                    
-                if moving_cells:
-                    # We've found something to attack this border square eventually, let's move to the next.
-                    break
-        
         
 ################
 # Square class #        
@@ -563,7 +542,6 @@ class Square:
         self.moving_here = []
         self._is_border = None
         self._is_npc_border = None
-        self._influence_production_npc = None
         
 
     def make_move(self, direction):
@@ -594,12 +572,16 @@ class Square:
         # looks at a square and sees if it's a border.
         # Looks at all neighbors and see if the owner != my_id
         # Have we done this calculation already? It shouldn't change within a frame
+        # Is_border means that the square is owned by is AND there is a non-owned square next to it
         if self._is_border == None:
-            for n in self.neighbors():
-                if n.owner != self.game_map.my_id:
-                    self._is_border = True
-                    return True
-            self._is_border = False
+            if self.owner != self.game_map.my_id:
+                self._is_border = False
+            else:
+                for n in self.neighbors():
+                    if n.owner != self.game_map.my_id:
+                        self._is_border = True
+                        return True
+                self._is_border = False
         return self._is_border
                 
     def is_npc_border(self):
@@ -636,40 +618,9 @@ class Square:
             possible_moves.sort(key = lambda x: x[1], reverse = True) # Sort owner, True = 1, False = 0
         #logging.debug(str(possible_moves))
         # The smallest move is the one we'll take.
+        # TODO: Should we handle strength overage here??
         self.game_map.make_move(self, possible_moves[0][0])        
-    
-    def influence_production_npc(self):
-        return self.game_map.influence_production_map[self.x, self.y]
-        # So that we don't have to calculate the entire map every tick, and to prevent recalcs, calculate and store into the square so we can reference it whenever we want
-        # Lots of tweaking to do.
-        if self._influence_production_npc == None:
-            self._influence_production_npc = 0
-            if self.owner == 0:
-                # I think for any purpose we would use here, if we own the territory, we don't actually care about this value
-                return self._influence_production_npc
-                
-            neighbors = self.neighbors(production_influence_max_distance, True)
-            
-            for n in neighbors:
-                distance = self.game_map.get_distance(self, n)
-                prod_n = n.production
-                if n.owner == 0:
-                    str_value = max(1, n.strength)
-                elif n.owner == self.game_map.my_id:
-                    # Do not assign any influence for cells we own
-                    prod_n = 0
-                    str_value = 1 # This shouldn't matter since value will just equal 0
-                else:
-                    # If we want to do something differently with strengths in enemy territory, we can alter it here.
-                    str_value = max(1, n.strength)
-                
-                decay_factor = math.exp(-production_decay * distance)
-                value = prod_n / str_value
-                
-                self._influence_production_npc += value * decay_factor
-                
-        return self._influence_production_npc
-        
+
         
 ####################
 # Helper Functions #
@@ -758,43 +709,25 @@ def heuristic(cell, source = None):
     bordered_by_hostile = False
     
     for c in cell_neighbors:
-        if c.owner != 0:
+        if c.owner != 0 and c.owner != game_map.my_id:
             bordered_by_hostile = True
             
     if len(other_cells_moving_into_cell) > 0 and not bordered_by_hostile:
         # Someone else is capturing this neutral territory already.
         return 0
         
-    # Calculate how much attack damage we would do by moving into here (assumes everyone else stays still)
-    total_damage = 0
+    cell_value = 0
     
-    # Calculate the strength of other cells moving into here
-    total_attack_strength = 0
-    for c in other_cells_moving_into_cell:
-        if c.owner == game_map.my_id:
-            total_attack_strength += c.strength
+    cell_value += production_square_influence_factor * cell.production / max(cell.strength, 1)
+    cell_value += game_map.influence_production_map[cell.x, cell.y] * production_influence_factor
+    cell_value += game_map.influence_prod_over_str_map[cell.x, cell.y] * prod_over_str_influence_factor
+    cell_value += numpy.multiply(game_map.strength_map, game_map.is_enemy_map)[cell.x, cell.y] * enemy_strength_0_influence_factor
+    cell_value += game_map.influence_enemy_strength_map_1[cell.x, cell.y] * enemy_strength_1_influence_factor
+    cell_value += game_map.influence_enemy_strength_map_1[cell.x, cell.y] * enemy_strength_2_influence_factor
+    cell_value += game_map.influence_enemy_strength_map_1[cell.x, cell.y] * enemy_strength_3_influence_factor
     
+    return cell_value
     
-    directions = [NORTH, EAST, SOUTH, WEST]
-    for d in directions:
-        target = game_map.get_target(cell, d)
-        if target.owner != 0 and target.owner != game_map.my_id:
-            damage = max(target.strength - total_attack_strength, 0)
-            if source != None:
-                damage = min(source.strength, damage)
-            total_damage += damage
-
-    # NOTE::: Heuristic here has been modified. Revert if we don't want to mess with this right now.
-    value = 0          
-    if cell.owner == 0:
-        #value = max(1, cell.strength) / cell.production # Number of turns to recover. LOWER is better.
-        production_value = cell.production / max(cell.strength, 1)
-        value = production_value + cell.influence_production_npc() * production_influence_factor
-            
-    # This should be changed, but we'll keep it at this for now:
-        
-    return value + total_damage # Total damage is going to totally overpower value...
-
 
 
 
@@ -808,28 +741,51 @@ def game_loop():
     #game_map.create_production_influence_map()
     #logging.debug("\nFrame: " + str(game_map.frame))
     # Have each individual square decide on their own movement
-    square_move_list = []
-    for square in game_map:
-        if square.owner == game_map.my_id: 
-            square_move_list.append(square)
+    #square_move_list = []
+    #for square in game_map:
+    #    if square.owner == game_map.my_id: 
+    #        square_move_list.append(square)
     # Have smaller strength pieces move first. Mainly since otherwise especially for attacking, large pieces bounce back and forth when we want them to attack instead.
-    square_move_list.sort(key = lambda x: x.strength)   
+    #square_move_list.sort(key = lambda x: x.strength)   
     #percent_owned = len(square_move_list) / (game_map.width * game_map.height)
+    
+    #if game_map.frame % 25 == 0:
+    #    logging.debug("\nFrame: " + str(game_map.frame))
+    #    logging.debug("influence production map:")
+    #    logging.debug(game_map.influence_production_map)
+    #    logging.debug("influence production/str map:")
+    #    logging.debug(game_map.influence_prod_over_str_map)
+    #    logging.debug("enemy_str_1")
+    #    logging.debug(game_map.influence_enemy_strength_map_1)
+    #    logging.debug("enemy_str_2")
+    #    logging.debug(game_map.influence_enemy_strength_map_2)
+    #    logging.debug("enemy_str_3")
+    #    logging.debug(game_map.influence_enemy_strength_map_3)
+    #    logging.debug("enemy_str_controlled_1")
+    #    logging.debug(game_map.influence_enemy_territory_map_1)
+    #    logging.debug("enemy_str_controlled_2")
+    #    logging.debug(game_map.influence_enemy_territory_map_2)
+    #    logging.debug("enemy_str_controlled_3")
+    #    logging.debug(game_map.influence_enemy_territory_map_3)
+        
+        
+    
+    game_map.get_best_moves()
 
-    for square in square_move_list:
-        game_map.get_best_move(square)
+    #for square in square_move_list:
+    #    game_map.get_best_move(square)
     # Project the state of the board assuming for now that enemy pieces do not move    
     #game_map.create_projection()    
     # Do stuff
 
-    game_map.attack_border_multiple_pieces()
+    #game_map.attack_border_multiple_pieces()
     #consolidate_strength()
     #if game_map.frame < 10:
     #    consolidate_strength(3)
     #elif game_map.frame < 20:
     #    consolidate_strength(2)
     #elif game_map.frame < 40:
-    game_map.consolidate_strength(1)
+    #game_map.consolidate_strength(1)
     
     over_count = game_map.width * game_map.height
     
@@ -876,11 +832,3 @@ game_map = GameMap()
 
 while True:
     game_loop()
-    
-    
-    
-    
-    
-    
-    
-    

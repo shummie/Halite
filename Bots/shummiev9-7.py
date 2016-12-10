@@ -13,40 +13,38 @@ import sys
 import logging
 import numpy
 import random
-#import time
+import time
 
 
 #############
 # Variables #
 #############
 
-botname = "shummie v9.13.10"
+botname = "shummie v9.6"
 
-production_decay = 0.5
-production_influence_max_distance = 8
+production_decay = 0.3
+production_influence_max_distance = 5
 buildup_multiplier = 7
-early_game_buildup_multiplier = 7
-early_game_value_threshold = 0.66
-strength_buffer = 25
+strength_buffer = 75
 
-production_self_factor = -0.5
-production_neutral_factor = 1.25
-production_enemy_factor = 1.5
-production_influence_factor = .4 # Sample values are around 50-80
-production_square_influence_factor = 30
+production_self_factor = 0
+production_neutral_factor = 1
+production_enemy_factor = 0.75
+production_influence_factor = 0.2 # Sample values are around 50-80
+production_square_influence_factor = 60
 prod_over_str_influence_factor = 50 # Sample values are around 0.5 - 1.0
 prod_over_str_self_factor = 0
-prod_over_str_neutral_factor = 1.25
-prod_over_str_enemy_factor = 2
+prod_over_str_neutral_factor = 1.5
+prod_over_str_enemy_factor = 3
 enemy_strength_0_influence_factor = 5
 enemy_strength_1_influence_factor = 4 # Sample values around 4-20
 enemy_strength_2_influence_factor = 2 # Sample values around 2-40
-enemy_strength_3_influence_factor = 1 # Sample values around 2-50
-border_distance_decay_factor = 1.5
-border_target_percentile = .75
-enemy_territory_1 = 40
-enemy_territory_2 = 25
-enemy_territory_3 = 10
+enemy_strength_3_influence_factor = .5 # Sample values around 2-50
+border_distance_decay_factor = 1.4
+border_target_percentile = .65
+enemy_territory_1 = 30
+enemy_territory_2 = 15
+enemy_territory_3 = 5
 
         
 #################
@@ -77,7 +75,6 @@ class GameMap:
         self.my_id = int(get_string())
         map_size_string = get_string()
         production_map_string = get_string()
-        self.early_game = True
         
         self.width, self.height = tuple(map(int, map_size_string.split()))
         self.frame = 0
@@ -365,7 +362,6 @@ class GameMap:
             elif square.strength > (square.production * buildup_multiplier):
                 #self.go_to_border(square)
                 self.find_nearest_enemy_direction(square)
-                #self.go_to_border(square)
         
         # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.
 
@@ -432,12 +428,6 @@ class GameMap:
                 cells_out += 1
         return False
 
-    def go_to_border2(self, square):
-        
-        targets = [x for x in square.neighbors()]
-        targets.sort(key = lambda x: raw_heuristic(x), reverse = True)
-        return square.move_to_target(targets[0], True)
-            
             
     def go_to_border(self, square):
         # Going to do a simple search for the closest border then determine which of the 4 directions we should go
@@ -448,8 +438,8 @@ class GameMap:
         #self.border_square_list.sort(key = lambda x: self.influence_prod_over_str_map[x.x, x.y])
         self.border_square_list.sort(key = lambda x: heuristic(x) / self.get_distance(square, x)**border_distance_decay_factor, reverse = True)
         
-        #if len(self.border_square_list) > 0:        
-        return square.move_to_target(self.border_square_list[0], True)
+        if len(self.border_square_list) > 0:        
+            return square.move_to_target(self.border_square_list[0], True)
         # If all cardinal directions are owned, is it possible to actually not move?
         # Move randomly then?
         #self.make_move(square, random.choice(range(1)))
@@ -530,7 +520,7 @@ class GameMap:
             if (square.move == -1 or square.move == STILL):
                 # Try to move into another square which is moving into us
                 if len(square.moving_here) > 0:
-                    square.move_to_target(random.choice(square.moving_here).target, False)
+                    square.move_to_target(random.choice(square.moving_here), True)
             else:
                 # We are moving but the squares that are moving into here are going to collide.
                 # See if we can reroute one of them perpendicular to where they are going, going the opposite direction is likely guaranteed to be counter productive
@@ -650,66 +640,8 @@ class Square:
         #logging.debug(str(possible_moves))
         # The smallest move is the one we'll take.
         # TODO: Should we handle strength overage here??
-        
-        # Will moving into this square cause a conflict?
-        possible_target = self.game_map.get_target(self, possible_moves[0][0])
-        if sum(x.strength for x in possible_target.moving_here) + possible_target.strength if (possible_target.move != -1 and possible_target.move != STILL) else 0 <= 255 + strength_buffer:
-            self.game_map.make_move(self, possible_moves[0][0])
-            return True
-        # Otherwise, we have a conflict. Can we go another direction?
-        elif possible_moves[0][2] == possible_moves[1][2]:
-            # Ok, moving to our 2nd choice is the same distance away. Let's try it.
-            possible_target = self.game_map.get_target(self, possible_moves[1][0])
-            if sum(x.strength for x in possible_target.moving_here) + possible_target.strength if (possible_target.move != -1 and possible_target.move != STILL) else 0 <= 255 + strength_buffer:
-                # We're ok, make this move instead.
-                self.game_map.make_move(self, possible_moves[1][0])
-                return True
-        # Ok, we can't move to either square without going further away from our target. If the other square is staying still can we swap them in?
-        
-        possible_target = self.game_map.get_target(self, possible_moves[0][0])
-        if possible_target.move == -1: # If it's staying STILL, then it's likely doing so for a reason so don't mess with it
-            # Can we tell them to go to our target?
-            # If friendly:
-            if self.target.owner == self.game_map.my_id:
-                success = possible_target.move_to_target(self.target, True)
-                if success:
-                    return True
-                else:
-                    # Check if we can move them into this square
-                    if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                        self.game_map.make_move(possible_target, opposite_direction(possible_moves[0][0]))
-                        self.game_map.make_move(self, possible_moves[0][0])
-                        return True
-                    elif possible_moves[0][2] == possible_moves[1][2]: # Ok, was the 2nd move option a possibility?
-                        possible_target = self.game_map.get_target(self, possible_moves[1][0])
-                        if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                            self.game_map.make_move(possible_target, opposite_direction(possible_moves[1][0]))
-                            self.game_map.make_move(self, possible_moves[1][0]) 
-                            return True
-            else:
-                success = possible_target.move_to_target(self.target, False)
-                if success: 
-                    return True
-                else:
-                    # Check if we can move them into this square
-                    if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                        self.game_map.make_move(possible_target, opposite_direction(possible_moves[0][0]))
-                        self.game_map.make_move(self, possible_moves[0][0])
-                        return True
-                    elif possible_moves[0][2] == possible_moves[1][2]: # Ok, was the 2nd move option a possibility?
-                        possible_target = self.game_map.get_target(self, possible_moves[1][0])
-                        if possible_target.strength + sum(x.strength for x in self.moving_here) <= 255 + strength_buffer:
-                        # Yes we can, swap!
-                            self.game_map.make_move(possible_target, opposite_direction(possible_moves[1][0]))
-                            self.game_map.make_move(self, possible_moves[1][0]) 
-                            return True                    
-        
-        # Ok... So, we can't move to another direction without moving further AND the other cell is moving. Just stay still then.
-        return False
-        
+        self.game_map.make_move(self, possible_moves[0][0])        
+
         
 ####################
 # Helper Functions #
@@ -763,6 +695,12 @@ def spread(M, decay = 1, include_self = True):
     
     spread_map = numpy.sum(numpy.multiply(decay_map, M), (2, 3))
     return spread_map
+    
+    
+    
+    
+    
+    
         
 def get_all_d_away(d):
     combos = []
@@ -772,9 +710,7 @@ def get_all_d_away(d):
         combos.extend(list(itertools.product(x_vals, y_vals)))
     return list(set(combos))
         
-def distance_from_owned(M, mine):
-    # Returns the minimum distance to get to any point if already at all points in xys using 4D array M
-    return numpy.apply_along_axis(numpy.min, 0, M[numpy.nonzero(mine)])
+    
     
     
 ########################
@@ -819,132 +755,9 @@ def heuristic(cell, source = None):
     cell_value += game_map.influence_enemy_territory_map_3[cell.x, cell.y] * enemy_territory_3
 
     return cell_value
-
-def raw_heuristic(cell, source = None):
-
-    # Returns the raw heuristic, not caring about any other factors
-        
-    cell_value = 0
-    
-    cell_value += production_square_influence_factor * cell.production / max(cell.strength, 1)
-    cell_value += game_map.influence_production_map[cell.x, cell.y] * production_influence_factor
-    cell_value += game_map.influence_prod_over_str_map[cell.x, cell.y] * prod_over_str_influence_factor
-    cell_value += numpy.multiply(game_map.strength_map, game_map.is_enemy_map)[cell.x, cell.y] * enemy_strength_0_influence_factor
-    cell_value += game_map.influence_enemy_strength_map_1[cell.x, cell.y] * enemy_strength_1_influence_factor
-    cell_value += game_map.influence_enemy_strength_map_2[cell.x, cell.y] * enemy_strength_2_influence_factor
-    cell_value += game_map.influence_enemy_strength_map_3[cell.x, cell.y] * enemy_strength_3_influence_factor
-    cell_value += game_map.influence_enemy_territory_map_1[cell.x, cell.y] * enemy_territory_1
-    cell_value += game_map.influence_enemy_territory_map_2[cell.x, cell.y] * enemy_territory_2
-    cell_value += game_map.influence_enemy_territory_map_3[cell.x, cell.y] * enemy_territory_3
-
-    return cell_value
-    
-def first_capture(start_cell):
-    # Which bordering cell provides the most total strength
-    for n in start_cell.neighbor():
-        start_strength = start_cell.strength
-        if start_strength > n.strength:
-            # We can immediately capture a neighbor. 
-            start_strength -= n.strength
-            # How many turns to take over an adjacent cell?
-        else:
-            # How many turns will it take to capture this cell?
-            turns_to_capture = math.ceil((n.strength - start_cell.strength) / start_cell.production)
-            (10 - turns_to_capture) * math.p
     
 
-def first_turns_heuristic3():
-    border_squares = []
-    for square in game_map:
-        if square.is_npc_border():
-            border_squares.append((square, get_future_value(square, 5)))
-    border_squares.sort(key = lambda x: x[1], reverse = True)
-    
-    find_cell = True
-    threshold = border_squares[0][1] * early_game_value_threshold
-    while find_cell:
-        find_cell = game_map.attack_cell(border_squares[0][0], 5)
-        if find_cell:
-            border_squares.pop(0)
-            
-    for border in border_squares:
-        if border[1] >= threshold:
-            find_cell = game_map.attack_cell(border[0], 5)
-            
-    
-    cells_to_consider_moving = []
-    for square in game_map:
-        # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
-        if square.owner == game_map.my_id and (square.move == -1):
-            cells_to_consider_moving.append(square)
-    
-    for square in cells_to_consider_moving:
-        if square.strength > square.production * early_game_buildup_multiplier:
-            if not square.is_border():
-            # Move to the highest valued cell
-                square.move_to_target(border_squares[0][0], True)
-            else:
-                if game_map.get_distance(square, border_squares[0][0]) > 2:
-                    square.move_to_target(border_squares[0][0], True)
-                
-    
-            
-    
-        
 
-def get_future_value(square, squares_out):
-    # This is the initial function that calls the recursion
-    return get_future_value_rec(square, 0, squares_out)
-
-def get_future_value_rec(square, squares_out, max_dist):
-    if squares_out == max_dist:
-        if square.owner == game_map.my_id: 
-            return 0
-        else:
-            return square.production / max(square.strength, 0.001)
-    else:
-        neighbor_vals = []
-        this_square_val = 0
-        if square.owner != game_map.my_id:
-            this_square_val = (square.production / max(square.strength, 0.001))
-        for n in square.neighbors():
-            neighbor_vals.append(get_future_value_rec(n, squares_out + 1, max_dist))
-        return this_square_val + max(neighbor_vals)        
-    
-def turns_to_capture(cell, range = 4):
-    # How many turns does it take to capture the target cell?
-    # How far out can we look?
-    turn_max = 10
-    # Get the distance map for this cell:
-    turns = 1
-    turns_to_capture = -1
-    while turns < turn_max and turns_to_capture == -1:
-        cells_out = min(turns, range)
-        available_squares = (game_map.move_map == -1) * 1
-        distance_matrix = game_map.friendly_flood_fill(cell, cells_out)
-        distance_matrix[distance_matrix == -1] = 0
-
-        owned_in_range = numpy.minimum(distance_matrix, 1)
-            
-        available_strength = numpy.sum(numpy.multiply(numpy.multiply(game_map.strength_map, numpy.minimum(distance_matrix, 1)), available_squares))
-
-        distance_matrix = cells_out - distance_matrix
-        distance_matrix[distance_matrix == cells_out] = 0
-        available_production = numpy.sum(numpy.multiply(numpy.multiply(game_map.production_map, distance_matrix), available_squares))   
-    
-        if cells_out <= range:
-            future_strength = available_strength + available_production
-            if future_strength > cell.strength:
-                return cells_out
-        else:
-            production_per_turn = numpy.sum(numpy.multiply(owned_in_range, game_map.production_map))
-            future_strength = available_strength + available_production
-            return int((cell.strength - future_strength) / production_per_turn)
-            
-            
-    
-    
-    
 
 #############
 # Game Loop #
@@ -983,11 +796,8 @@ def game_loop():
     #    logging.debug("enemy_str_controlled_3")
     #    logging.debug(game_map.influence_enemy_territory_map_3)
         
-    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
-        first_turns_heuristic3()
-    else:
-        game_map.early_game = False
-        game_map.get_best_moves()
+
+    game_map.get_best_moves()
 
     #for square in square_move_list:
     #    game_map.get_best_move(square)
@@ -1008,6 +818,7 @@ def game_loop():
 
     new_over_count = game_map.prevent_overstrength()
 
+    
     while new_over_count < over_count:
         over_count = new_over_count
         new_over_count = game_map.prevent_overstrength()
@@ -1045,8 +856,8 @@ logging.basicConfig(filename='logging.log',level=logging.DEBUG)
 # logging.debug('your message here')
 NORTH, EAST, SOUTH, WEST, STILL = range(5)
 
-game_map = GameMap()
 
+game_map = GameMap()
 
 while True:
     game_loop()

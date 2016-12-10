@@ -20,14 +20,14 @@ import random
 # Variables #
 #############
 
-botname = "shummie v9.13.10"
+botname = "shummie v9.13.8"
 
 production_decay = 0.5
 production_influence_max_distance = 8
 buildup_multiplier = 7
 early_game_buildup_multiplier = 7
-early_game_value_threshold = 0.66
-strength_buffer = 25
+early_game_value_threshold = 0.75
+strength_buffer = 55
 
 production_self_factor = -0.5
 production_neutral_factor = 1.25
@@ -529,6 +529,7 @@ class GameMap:
             # Case 2: We are not moving, let's move this square into a square moving into us
             if (square.move == -1 or square.move == STILL):
                 # Try to move into another square which is moving into us
+                # Can we go to the same target?                
                 if len(square.moving_here) > 0:
                     square.move_to_target(random.choice(square.moving_here).target, False)
             else:
@@ -774,7 +775,7 @@ def get_all_d_away(d):
         
 def distance_from_owned(M, mine):
     # Returns the minimum distance to get to any point if already at all points in xys using 4D array M
-    return numpy.apply_along_axis(numpy.min, 0, M[numpy.nonzero(mine)])
+    return numpy.apply_along_axis(numpy.min, 0, M[np.nonzero(mine)])
     
     
 ########################
@@ -858,6 +859,8 @@ def first_turns_heuristic3():
     for square in game_map:
         if square.is_npc_border():
             border_squares.append((square, get_future_value(square, 5)))
+            if game_map.influence_enemy_territory_map_2[square.x, square.y] == 1:
+                game_map.early_game = False
     border_squares.sort(key = lambda x: x[1], reverse = True)
     
     find_cell = True
@@ -983,7 +986,8 @@ def game_loop():
     #    logging.debug("enemy_str_controlled_3")
     #    logging.debug(game_map.influence_enemy_territory_map_3)
         
-    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
+    #if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
+    if game_map.early_game:
         first_turns_heuristic3()
     else:
         game_map.early_game = False

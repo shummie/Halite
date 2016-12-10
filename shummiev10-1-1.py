@@ -20,18 +20,18 @@ import random
 # Variables #
 #############
 
-botname = "shummie v9.13.10"
+botname = "shummie v10.1.1"
 
-production_decay = 0.5
+production_decay = 0.4
 production_influence_max_distance = 8
-buildup_multiplier = 7
+buildup_multiplier = 6
 early_game_buildup_multiplier = 7
-early_game_value_threshold = 0.66
-strength_buffer = 25
+early_game_value_threshold = 0.75
+strength_buffer = 50
 
-production_self_factor = -0.5
+production_self_factor = -0.15
 production_neutral_factor = 1.25
-production_enemy_factor = 1.5
+production_enemy_factor = 5
 production_influence_factor = .4 # Sample values are around 50-80
 production_square_influence_factor = 30
 prod_over_str_influence_factor = 50 # Sample values are around 0.5 - 1.0
@@ -149,22 +149,15 @@ class GameMap:
         
         # Create is_owner maps
         self.create_is_owner_map()
-
-        
-
         self.create_border_map()
 
         # Create the list of border squares
 
         self.create_border_square_list()
-
         self.create_influence_production_map()
-
         self.create_influence_enemy_strength_map()
-
         self.create_influence_prod_over_str_map()
-
-        
+     
     def create_is_owner_map(self):
         # Creates a 3-d owner map from self.owner_map
         self.is_owner_map = numpy.zeros((self.starting_player_count + 1, self.width, self.height))
@@ -450,10 +443,7 @@ class GameMap:
         
         #if len(self.border_square_list) > 0:        
         return square.move_to_target(self.border_square_list[0], True)
-        # If all cardinal directions are owned, is it possible to actually not move?
-        # Move randomly then?
-        #self.make_move(square, random.choice(range(1)))
-        #self.make_move(square, random.choice(range(2)))
+
         
     def find_nearest_enemy_direction(self, square):
 
@@ -653,14 +643,14 @@ class Square:
         
         # Will moving into this square cause a conflict?
         possible_target = self.game_map.get_target(self, possible_moves[0][0])
-        if sum(x.strength for x in possible_target.moving_here) + possible_target.strength if (possible_target.move != -1 and possible_target.move != STILL) else 0 <= 255 + strength_buffer:
+        if sum(x.strength for x in possible_target.moving_here) + possible_target.strength if (possible_target.move != -1 and possible_target.move != STILL and possible_target.owner == self.game_map.my_id) else 0 <= 255 + strength_buffer:
             self.game_map.make_move(self, possible_moves[0][0])
             return True
         # Otherwise, we have a conflict. Can we go another direction?
         elif possible_moves[0][2] == possible_moves[1][2]:
             # Ok, moving to our 2nd choice is the same distance away. Let's try it.
             possible_target = self.game_map.get_target(self, possible_moves[1][0])
-            if sum(x.strength for x in possible_target.moving_here) + possible_target.strength if (possible_target.move != -1 and possible_target.move != STILL) else 0 <= 255 + strength_buffer:
+            if sum(x.strength for x in possible_target.moving_here) + possible_target.strength if (possible_target.move != -1 and possible_target.move != STILL and possible_target.owner == self.game_map.my_id) else 0 <= 255 + strength_buffer:
                 # We're ok, make this move instead.
                 self.game_map.make_move(self, possible_moves[1][0])
                 return True
@@ -983,7 +973,7 @@ def game_loop():
     #    logging.debug("enemy_str_controlled_3")
     #    logging.debug(game_map.influence_enemy_territory_map_3)
         
-    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
+    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35:
         first_turns_heuristic3()
     else:
         game_map.early_game = False

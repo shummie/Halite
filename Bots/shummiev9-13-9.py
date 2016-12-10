@@ -20,14 +20,14 @@ import random
 # Variables #
 #############
 
-botname = "shummie v9.13.10"
+botname = "shummie v9.13.9"
 
 production_decay = 0.5
 production_influence_max_distance = 8
 buildup_multiplier = 7
 early_game_buildup_multiplier = 7
-early_game_value_threshold = 0.66
-strength_buffer = 25
+early_game_value_threshold = 0.75
+strength_buffer = 55
 
 production_self_factor = -0.5
 production_neutral_factor = 1.25
@@ -362,7 +362,7 @@ class GameMap:
                 if len(targets) > 0:
                     targets.sort(key = lambda x: heuristic(x), reverse = True)
                     square.move_to_target(targets[0], False)
-            elif square.strength > (square.production * buildup_multiplier):
+            elif square.strength > min(125, square.production * buildup_multiplier):
                 #self.go_to_border(square)
                 self.find_nearest_enemy_direction(square)
                 #self.go_to_border(square)
@@ -530,7 +530,7 @@ class GameMap:
             if (square.move == -1 or square.move == STILL):
                 # Try to move into another square which is moving into us
                 if len(square.moving_here) > 0:
-                    square.move_to_target(random.choice(square.moving_here).target, False)
+                    square.move_to_target(random.choice(square.moving_here), True)
             else:
                 # We are moving but the squares that are moving into here are going to collide.
                 # See if we can reroute one of them perpendicular to where they are going, going the opposite direction is likely guaranteed to be counter productive
@@ -856,13 +856,16 @@ def first_capture(start_cell):
 def first_turns_heuristic3():
     border_squares = []
     for square in game_map:
-        if square.is_npc_border():
-            border_squares.append((square, get_future_value(square, 5)))
+        if square.is_npc_border():            
+            if game_map.influence_enemy_territory_map_2[square.x, square.y] == 1:
+                game_map.early_game = False
+            else:
+                border_squares.append((square, get_future_value(square, 5)))
     border_squares.sort(key = lambda x: x[1], reverse = True)
     
     find_cell = True
     threshold = border_squares[0][1] * early_game_value_threshold
-    while find_cell:
+    while find_cell and len(border_squares) > 4:
         find_cell = game_map.attack_cell(border_squares[0][0], 5)
         if find_cell:
             border_squares.pop(0)
@@ -870,8 +873,7 @@ def first_turns_heuristic3():
     for border in border_squares:
         if border[1] >= threshold:
             find_cell = game_map.attack_cell(border[0], 5)
-            
-    
+        
     cells_to_consider_moving = []
     for square in game_map:
         # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
@@ -879,16 +881,34 @@ def first_turns_heuristic3():
             cells_to_consider_moving.append(square)
     
     for square in cells_to_consider_moving:
-        if square.strength > square.production * early_game_buildup_multiplier:
+        if square.strength > min(120, square.production * early_game_buildup_multiplier):
             if not square.is_border():
             # Move to the highest valued cell
                 square.move_to_target(border_squares[0][0], True)
             else:
                 if game_map.get_distance(square, border_squares[0][0]) > 2:
                     square.move_to_target(border_squares[0][0], True)
-                
+        
     
+def mid_game_heuristic():
+    border_squares = []
+    for square in game_map:
+        if square.is_npc_border():            
+           border_squares.append((square, get_future_value(square, 3)))
+    border_squares.sort(key = lambda x: x[1], reverse = True)
+    
+    find_cell = True
+    threshold = border_squares[0][1] * early_game_value_threshold
+    while find_cell and len(border_squares) > 4:
+        find_cell = game_map.attack_cell(border_squares[0][0], 3)
+        if find_cell:
+            border_squares.pop(0)
             
+    for border in border_squares:
+        if border[1] >= threshold:
+            find_cell = game_map.attack_cell(border[0], 3)
+        
+      
     
         
 
@@ -983,10 +1003,15 @@ def game_loop():
     #    logging.debug("enemy_str_controlled_3")
     #    logging.debug(game_map.influence_enemy_territory_map_3)
         
-    if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
+    #if game_map.early_game and numpy.sum(game_map.is_owner_map[game_map.my_id]) < (10*(game_map.width * game_map.height)**.5) / 35 and game_map.frame < (10*(game_map.width * game_map.height)**.5) / 4:
+    if game_map.early_game:
         first_turns_heuristic3()
-    else:
+    elif numpy.sum(game_map.is_owner_map[0]) > (game_map.width * game_map.height) * 0.33:
         game_map.early_game = False
+        #midgame?
+        mid_game_heuristic()
+        game_map.get_best_moves()
+    else:
         game_map.get_best_moves()
 
     #for square in square_move_list:
