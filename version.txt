@@ -1,6 +1,19 @@
 History
 --------
-Version 9.0 - ??? / ??? - December 9, 2016
+
+
+Version 12 - ?? / ??? - December 10, 2016
+* Timeout error fix attempt 2, bugfix in move_to_target
+
+Version 11 - 663 / 955 - December 10, 2016
+* Timeout error fix attempt
+
+Version 10.0 - 611 / 955 - December 10, 2016
+* Added separate parameters for late game, along with initial values
+* Rewrote the move_to_target code significantly.
+* Tweaked earlygame to midgame trigger
+
+Version 9.0 - 78 / 955 - December 9, 2016
 * Added a separate early game heuristic
 * Changed the overstrength code to occur when attempting to move to a target. 
 * Attempts to chain when using the move_to_target overstrength code.
