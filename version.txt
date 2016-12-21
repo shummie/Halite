@@ -1,8 +1,15 @@
 History
 --------
+Version 14 - ?? / ??? - December 12, 2016
+* Change how far our the early game tries to look based on map size and player count
+* Slightly tweak the find_nearest_non_npc_enemy_direction function. There is some slowdown when we're winning but we don't want to timeout. How to fix?
 
+Version 13 - 43 / 983 - December 11, 2016
+* Rewrote early game recursion code. Now runs in constant time!
+* Some minor parameter tweaking.
+* Wrote, but not using, a new heuristic map
 
-Version 12 - ?? / ??? - December 10, 2016
+Version 12 - 23 / 974 - December 10, 2016
 * Timeout error fix attempt 2, bugfix in move_to_target
 
 Version 11 - 663 / 955 - December 10, 2016

@@ -20,7 +20,7 @@ import time
 # Variables #
 #############
 
-botname = "shummie v15.9-3"
+botname = "shummie v15.9-1"
 
 production_decay = 0.7
 production_influence_max_distance = 12
@@ -224,12 +224,11 @@ class GameMap:
 
         # Create the list of border squares
         self.create_influence_production_map()
-        self.update_influence_enemy_strength_maps()
+        self.create_influence_enemy_strength_map()
         self.create_influence_prod_over_str_map()
         
         self.create_heuristic_map()
         self.create_future_map(self.early_game_squares_out_search)
-        self.update_recover_map()
         
         self.update_distance_maps()
     
@@ -306,11 +305,6 @@ class GameMap:
                 distance_map[x, y, :, :] = roll_xy(zero_zero_map, x, y)
                 
         return distance_map
-        
-    def rebase_map(self, map_a):
-    # Takes a map and returns a rebased version where numpy.sum(map) = self.width * self.height
-        factor = (self.width * self.height) / numpy.sum(map_a)
-        return numpy.multiply(map_a, factor)
 
     def create_influence_production_map(self):
         # Lots of tweaking to do...
@@ -344,18 +338,21 @@ class GameMap:
         # Do we want to do this?
         #self.influence_production_map -= numpy.multiply(self.influence_production_map, self.is_owner_map[self.my_id])
         
-    def update_influence_enemy_strength_maps(self):
+    def create_influence_enemy_strength_map(self):
         # Creates a list of the enemy strength projections.
         # Get all enemy strengths:
-        enemy_strength_map = numpy.multiply(self.strength_map, self.is_enemy_map) * 1.0
+        enemy_strength_map = numpy.multiply(self.strength_map, self.is_enemy_map)
         # It might be better to actually have 1 matrix referenced by [distance, x, y], but let's keep it this way for now.
-        self.influence_enemy_strength_map = numpy.zeros((10, self.width, self.height))
-        self.influence_enemy_territory_map = numpy.zeros((10, self.width, self.height))
-
-        for x in range(10):
-            # Note, we create a lot of these not necessarily because they're useful, but we can use it to see how far away we are from enemy territory.
-            self.influence_enemy_strength_map[x] = spread_n(enemy_strength_map, x)
-            self.influence_enemy_territory_map[x] = numpy.minimum(self.influence_enemy_strength_map[x], 1)
+        self.influence_enemy_strength_map_1 = spread_n(enemy_strength_map * 1.0, 1)
+        self.influence_enemy_strength_map_2 = spread_n(enemy_strength_map * 1.0, 2)
+        self.influence_enemy_strength_map_3 = spread_n(enemy_strength_map * 1.0, 3)
+        self.influence_enemy_strength_map_8 = spread_n(enemy_strength_map * 1.0, 8)
+        
+        self.influence_enemy_territory_map_1 = numpy.minimum(self.influence_enemy_strength_map_1, 1)
+        self.influence_enemy_territory_map_2 = numpy.minimum(self.influence_enemy_strength_map_2, 1)
+        self.influence_enemy_territory_map_3 = numpy.minimum(self.influence_enemy_strength_map_3, 1)
+        self.influence_enemy_territory_map_8 = numpy.minimum(self.influence_enemy_strength_map_8, 1)
+        
         
     def create_influence_prod_over_str_map(self):
         
@@ -388,13 +385,13 @@ class GameMap:
             self.heuristic_map += numpy.multiply(self.production_map, self.is_enemy_map) * production_enemy_factor
         
             self.heuristic_map += numpy.multiply(self.strength_map, self.is_enemy_map) * enemy_strength_0_influence_factor
-            self.heuristic_map += game_map.influence_enemy_strength_map[1] * enemy_strength_1_influence_factor
-            self.heuristic_map += game_map.influence_enemy_strength_map[2] * enemy_strength_2_influence_factor
-            self.heuristic_map += game_map.influence_enemy_strength_map[3] * enemy_strength_3_influence_factor
+            self.heuristic_map += game_map.influence_enemy_strength_map_1 * enemy_strength_1_influence_factor
+            self.heuristic_map += game_map.influence_enemy_strength_map_2 * enemy_strength_2_influence_factor
+            self.heuristic_map += game_map.influence_enemy_strength_map_3 * enemy_strength_3_influence_factor
     
-            self.heuristic_map += game_map.influence_enemy_territory_map[1] * enemy_territory_1
-            self.heuristic_map += game_map.influence_enemy_territory_map[2] * enemy_territory_2
-            self.heuristic_map += game_map.influence_enemy_territory_map[3] * enemy_territory_3
+            self.heuristic_map += game_map.influence_enemy_territory_map_1 * enemy_territory_1
+            self.heuristic_map += game_map.influence_enemy_territory_map_2 * enemy_territory_2
+            self.heuristic_map += game_map.influence_enemy_territory_map_3 * enemy_territory_3
                 
         else:
            
@@ -407,32 +404,13 @@ class GameMap:
             self.heuristic_map += numpy.multiply(self.production_map, self.is_enemy_map) * late_game_production_enemy_factor
             
             self.heuristic_map += numpy.multiply(numpy.multiply(self.strength_map, self.is_enemy_map), late_game_enemy_strength_0_influence_factor)
-            self.heuristic_map += numpy.multiply(self.influence_enemy_strength_map[1], late_game_enemy_strength_1_influence_factor)
-            self.heuristic_map += numpy.multiply(self.influence_enemy_strength_map[2], late_game_enemy_strength_2_influence_factor)
-            self.heuristic_map += numpy.multiply(self.influence_enemy_strength_map[3], late_game_enemy_strength_3_influence_factor)
-            self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map[1], late_game_enemy_territory_1)
-            self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map[2], late_game_enemy_territory_2)
-            self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map[3], late_game_enemy_territory_3)  
-
-    def update_recover_map(self):
-        max_distance = 50
-        self.recover_map = numpy.zeros((max_distance + 1, self.width, self.height))
-        self.recover_map[0] = numpy.divide(self.strength_map, numpy.maximum(self.production_map, 0.01))
-        self.recover_map[0] = numpy.multiply(self.recover_map[0], self.is_neutral_map)
-        self.recover_map[0] += (self.is_owned_map + self.is_enemy_map) * 999
-        
-        for distance in range(1, max_distance + 1):
-            dir_map = numpy.zeros((4, self.width, self.height))
-            dir_map[0] = roll_xy(self.recover_map[distance - 1], 0, 1)
-            dir_map[1] = roll_xy(self.recover_map[distance - 1], 0, -1)
-            dir_map[2] = roll_xy(self.recover_map[distance - 1], 1, 0)
-            dir_map[3] = roll_xy(self.recover_map[distance - 1], -1, 0)
-            
-            self.recover_map[distance] = numpy.add(self.recover_map[distance - 1], numpy.amin(dir_map, 0))
-        
-        for d in range(2, max_distance + 1):
-            self.recover_map[d] = self.recover_map[d] / d            
-            
+            self.heuristic_map += numpy.multiply(self.influence_enemy_strength_map_1, late_game_enemy_strength_1_influence_factor)
+            self.heuristic_map += numpy.multiply(self.influence_enemy_strength_map_2, late_game_enemy_strength_2_influence_factor)
+            self.heuristic_map += numpy.multiply(self.influence_enemy_strength_map_3, late_game_enemy_strength_3_influence_factor)
+            self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map_1, late_game_enemy_territory_1)
+            self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map_2, late_game_enemy_territory_2)
+            self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map_3, late_game_enemy_territory_3)  
+    
     def create_future_map(self, max_distance = 6):
         future_value_map = numpy.divide(self.production_map, numpy.maximum(self.strength_map, 0.3))
         future_value_map = numpy.multiply(future_value_map, 1 - self.is_owner_map[self.my_id])
@@ -505,8 +483,8 @@ class GameMap:
         all_targets = []
         production_squares = []
         for square in itertools.chain.from_iterable(self.squares):
-            if self.border_map[square.x, square.y]:
-                if self.influence_enemy_territory_map[5, square.x, square.y] == 0:
+            if square.is_npc_border():
+                if self.influence_enemy_territory_map_8[square.x, square.y] == 0:
                     production_squares.append((square, self.future_value_map[square.x, square.y]))
                 else: 
                     if square.owner == 0 and square.production == 1 and square.strength > 4:
@@ -620,6 +598,18 @@ class GameMap:
             else:
                 cells_out += 1
         return False
+            
+    def go_to_border(self, square):
+        # Going to do a simple search for the closest border then determine which of the 4 directions we should go
+        
+        #self.border_square_list.sort(key = lambda x: x.influence_production_npc() / (self.get_distance(square, x)**0.5), reverse = True)
+        #self.border_square_list.sort(key = lambda x: x.influence_production_npc(), reverse = True)
+        
+        #self.border_square_list.sort(key = lambda x: self.influence_prod_over_str_map[x.x, x.y])
+        self.border_square_list.sort(key = lambda x: heuristic(x) / self.get_distance(square, x)**border_distance_decay_factor, reverse = True)
+        
+        #if len(self.border_square_list) > 0:        
+        return square.move_to_target(self.border_square_list[0], True)
 
     def find_nearest_non_owned_border(self, square):
                 
@@ -631,37 +621,6 @@ class GameMap:
                     if success:
                         break            
 
-    def find_nearest_non_npc_enemy_direction(self, square):
-        dir_distance = []
-        not_dir = []
-        max_distance = max(game_map.width, game_map.height) / 2
-        for d in (NORTH, EAST, SOUTH, WEST):
-            distance = 0
-            location = game_map.get_target(square, d)
-            
-            while (location.owner == self.my_id or (location.owner == 0 and location.strength == 0)) and distance < max_distance:
-                distance += 1
-                location = game_map.get_target(location, d)
-            
-            if location.owner == self.my_id:
-                not_dir.append((d, distance, location))
-            elif location.owner == 0 and location.strength > 0:
-                not_dir.append((d, distance, location))
-            else:
-                dir_distance.append((d, distance, location))
-            
-        dir_distance.sort(key = lambda x: x[1])
-        not_dir.sort(key = lambda x: x[1])
-        
-        success = False
-        index = 0
-        while not success and index < len(dir_distance):
-            success = square.move_to_target(dir_distance[index][2], False)
-            index += 1
-        if not success:
-            if len(not_dir) > 0:
-                success = square.move_to_target(not_dir[0][2], False)                    
-                    
     def find_nearest_enemy_border(self, square):
         current_distance = self.distance_from_enemy[square.x, square.y]
         for n in square.neighbors():
@@ -708,19 +667,19 @@ class GameMap:
         late_game_heuristic_map += numpy.multiply(self.late_game_influence_production_map, late_game_production_influence_factor)
         late_game_heuristic_map += numpy.multiply(self.late_game_influence_prod_over_str_map, late_game_prod_over_str_influence_factor)
         late_game_heuristic_map += numpy.multiply(numpy.multiply(self.strength_map, self.is_enemy_map), late_game_enemy_strength_0_influence_factor)
-        late_game_heuristic_map += numpy.multiply(self.influence_enemy_strength_map[1], late_game_enemy_strength_1_influence_factor)
-        late_game_heuristic_map += numpy.multiply(self.influence_enemy_strength_map[2], late_game_enemy_strength_2_influence_factor)
-        late_game_heuristic_map += numpy.multiply(self.influence_enemy_strength_map[3], late_game_enemy_strength_3_influence_factor)
-        late_game_heuristic_map += numpy.multiply(self.influence_enemy_territory_map[1], late_game_enemy_territory_1)
-        late_game_heuristic_map += numpy.multiply(self.influence_enemy_territory_map[2], late_game_enemy_territory_2)
-        late_game_heuristic_map += numpy.multiply(self.influence_enemy_territory_map[3], late_game_enemy_territory_3)
+        late_game_heuristic_map += numpy.multiply(self.influence_enemy_strength_map_1, late_game_enemy_strength_1_influence_factor)
+        late_game_heuristic_map += numpy.multiply(self.influence_enemy_strength_map_2, late_game_enemy_strength_2_influence_factor)
+        late_game_heuristic_map += numpy.multiply(self.influence_enemy_strength_map_3, late_game_enemy_strength_3_influence_factor)
+        late_game_heuristic_map += numpy.multiply(self.influence_enemy_territory_map_1, late_game_enemy_territory_1)
+        late_game_heuristic_map += numpy.multiply(self.influence_enemy_territory_map_2, late_game_enemy_territory_2)
+        late_game_heuristic_map += numpy.multiply(self.influence_enemy_territory_map_3, late_game_enemy_territory_3)
         
         all_targets = []
         all_border_targets = []
         for square in itertools.chain.from_iterable(self.squares):
             if square.owner != self.my_id: # do we want to target neutrals?
                 all_targets.append(square)
-            if self.border_map[square.x, square.y]:
+            if square.is_npc_border():
                 all_border_targets.append((square, late_game_heuristic_map[square.x, square.y]))
                 
                 
@@ -774,7 +733,7 @@ class GameMap:
         
         all_targets = []
         for square in itertools.chain.from_iterable(self.squares):
-            if self.border_map[square.x, square.y]:
+            if square.is_npc_border():
                 all_targets.append((square, self.heuristic_map[square.x, square.y]))
                 
         # Are all cells equally valuable?
@@ -809,8 +768,8 @@ class GameMap:
                     square.move_to_target(targets[0], False)
             elif square.strength > (square.production * buildup_multiplier):
                 #self.go_to_border(square)
-                self.find_nearest_non_npc_enemy_direction(square)
-                #self.find_nearest_enemy_border(square)
+                #self.find_nearest_non_npc_enemy_direction(square)
+                self.find_nearest_enemy_border(square)
                 #self.go_to_border(square)
         
         # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.        
@@ -831,7 +790,9 @@ class Square:
         self.target = None
         self.moving_here = []
         self._is_border = None
+        self._is_npc_border = None
         self._neighbors_1 = None
+
     
     def neighbors(self, n = 1, include_self = False):
         # Returns a list containing all neighbors within n squares, excluding self unless include_self = True
@@ -864,6 +825,12 @@ class Square:
                 self._is_border = False
         return self._is_border
                 
+    def is_npc_border(self):
+        # Looks at a square and sees if it's an NPC border square
+        # Defined as a square which is owned by 0 and has a neighbor of my_id
+        # Have we done this calculation already? It shouldn't change within a frame
+        return game_map.border_map[self.x, self.y]
+
     def move_to_target(self, target, through_friendly):
 
         # Attempts to move to the designated target
@@ -1203,21 +1170,21 @@ def heuristic(cell, source = None):
     cell_value += game_map.influence_production_map[cell.x, cell.y] * production_influence_factor
     cell_value += game_map.influence_prod_over_str_map[cell.x, cell.y] * prod_over_str_influence_factor
     cell_value += numpy.multiply(game_map.strength_map, game_map.is_enemy_map)[cell.x, cell.y] * enemy_strength_0_influence_factor
-    cell_value += game_map.influence_enemy_strength_map[1, cell.x, cell.y] * enemy_strength_1_influence_factor
-    cell_value += game_map.influence_enemy_strength_map[2, cell.x, cell.y] * enemy_strength_2_influence_factor
-    cell_value += game_map.influence_enemy_strength_map[3, cell.x, cell.y] * enemy_strength_3_influence_factor
-    cell_value += game_map.influence_enemy_territory_map[1, cell.x, cell.y] * enemy_territory_1
-    cell_value += game_map.influence_enemy_territory_map[2, cell.x, cell.y] * enemy_territory_2
-    cell_value += game_map.influence_enemy_territory_map[3, cell.x, cell.y] * enemy_territory_3
+    cell_value += game_map.influence_enemy_strength_map_1[cell.x, cell.y] * enemy_strength_1_influence_factor
+    cell_value += game_map.influence_enemy_strength_map_2[cell.x, cell.y] * enemy_strength_2_influence_factor
+    cell_value += game_map.influence_enemy_strength_map_3[cell.x, cell.y] * enemy_strength_3_influence_factor
+    cell_value += game_map.influence_enemy_territory_map_1[cell.x, cell.y] * enemy_territory_1
+    cell_value += game_map.influence_enemy_territory_map_2[cell.x, cell.y] * enemy_territory_2
+    cell_value += game_map.influence_enemy_territory_map_3[cell.x, cell.y] * enemy_territory_3
 
     return cell_value
 
 def first_turns_heuristic():
     border_squares = []
     for square in game_map:
-        if game_map.border_map[square.x, square.y]:
+        if square.is_npc_border():
             border_squares.append((square, game_map.future_value_map[square.x, square.y]))
-            if game_map.influence_enemy_territory_map[4, square.x, square.y] > 0:
+            if game_map.influence_enemy_territory_map_3[square.x, square.y] > 0:
                 game_map.phase = 1
     border_squares.sort(key = lambda x: x[1], reverse = True)
     
@@ -1256,7 +1223,14 @@ def game_loop():
     #game_map.create_production_influence_map()
     #logging.debug("\nFrame: " + str(game_map.frame))
     # Have each individual square decide on their own movement
-
+    #square_move_list = []
+    #for square in game_map:
+    #    if square.owner == game_map.my_id: 
+    #        square_move_list.append(square)
+    # Have smaller strength pieces move first. Mainly since otherwise especially for attacking, large pieces bounce back and forth when we want them to attack instead.
+    #square_move_list.sort(key = lambda x: x.strength)   
+    #percent_owned = len(square_move_list) / (game_map.width * game_map.height)
+    
     if game_map.phase == 0:
         #start = time.time()
         first_turns_heuristic()
@@ -1267,6 +1241,15 @@ def game_loop():
     else: # game_map.phase = 2
         game_map.get_best_moves_late_game()
 
+    #over_count = game_map.width * game_map.height
+
+    #new_over_count = game_map.prevent_overstrength()
+
+    #while new_over_count < over_count:
+    #    over_count = new_over_count
+    #    new_over_count = game_map.prevent_overstrength()
+
+    
     game_map.send_frame()
 
 

@@ -20,7 +20,7 @@ import time
 # Variables #
 #############
 
-botname = "shummie v15.9-3"
+botname = "shummie v15"
 
 production_decay = 0.7
 production_influence_max_distance = 12
