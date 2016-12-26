@@ -20,7 +20,7 @@ import scipy.sparse
 # Variables #
 #############
 
-botname = "shummie v25"
+botname = "shummie v26"
 
 production_decay = 0.7
 production_influence_max_distance = 12
@@ -617,14 +617,6 @@ class GameMap:
         all_targets.sort(key = lambda x: x[1], reverse = True)
         best_targets = all_targets[0:int(len(all_targets) * border_target_percentile)]
 
-        if len(production_squares) > 0:
-            threshold = production_squares[0][1] / mid_game_value_threshold
-        for border in production_squares:
-            find_cell = False
-            if border[1] >= threshold:
-                find_cell = self.attack_cell(border[0], 4)
-            if find_cell: 
-                production_squares.remove(border)
         # For each border cell, depending on either the state of the game or the border itself, different valuation algorithms should occur.
         
         # Ok now that we have a list of best targets, see if we can capture any of these immediately.
@@ -634,6 +626,14 @@ class GameMap:
             if success_attack:
                 best_targets.remove(target)
 
+        if len(production_squares) > 0:
+            threshold = production_squares[0][1] / mid_game_value_threshold
+        for border in production_squares:
+            find_cell = False
+            if border[1] >= threshold:
+                find_cell = self.attack_cell(border[0], 4)
+            if find_cell: 
+                production_squares.remove(border)
         # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
         cells_to_consider_moving = []
         for square in itertools.chain.from_iterable(self.squares):
@@ -650,9 +650,9 @@ class GameMap:
                 targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
                 if len(targets) > 0:
                     targets.sort(key = lambda x: heuristic(x), reverse = True)
-                    if heuristic(targets[0]) < 0 or self.recover_map[5, targets[0].x, targets[0].y] > threshold:
+                    if heuristic(targets[0]) <= 0 or self.recover_map[5, targets[0].x, targets[0].y] > threshold:
                         target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y] * 2, self.border_map)
-                        target_map += (self.is_owned_map + self.is_enemy_map) * 999
+                        target_map += (self.is_owned_map) * 999
                         tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
                         #square.move_to_target(self.squares[tx, ty], True)
                         self.move_square_to_target(square, self.squares[tx, ty])
@@ -666,7 +666,7 @@ class GameMap:
                     #self.find_nearest_non_owned_border(square)
                     #self.go_to_border(square)
                     target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y], self.border_map)
-                    target_map += (self.is_owned_map + self.is_enemy_map) * 999
+                    target_map += (self.is_owned_map) * 999
                     tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
                     self.move_square_to_target(square, self.squares[tx, ty])
                     #square.move_to_target(self.squares[tx, ty], True)

@@ -20,7 +20,7 @@ import scipy.sparse
 # Variables #
 #############
 
-botname = "shummie v25"
+botname = "shummie v26.2-1"
 
 production_decay = 0.7
 production_influence_max_distance = 12
@@ -216,12 +216,14 @@ class GameMap:
                 
         if self.phase == 0 and numpy.sum(self.is_owned_map) > (10*(self.width * self.height)**.5) / ((self.starting_player_count**0.5) * 12):
             self.phase = 1
-        if self.phase == 1 and numpy.sum(self.is_owned_map) < (self.width * self.height * 0.2):
+        if self.phase == 1 and numpy.sum(self.is_neutral_map) < (self.width * self.height * 0.4):
             self.phase = 2
 
     def update_maps(self):
         
         # Create is_owner maps
+        self.update_calc_maps()
+        
         self.update_owner_maps()
         self.update_border_maps()
 
@@ -241,9 +243,13 @@ class GameMap:
         #logging.debug("update_recover_map Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
         
         #start2 = time.time()
-        #self.update_distance_maps()
+        self.update_distance_maps()
         #end2 = time.time()
         #logging.debug("update_distance_maps Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
+
+    def update_calc_maps(self):
+        self.strength_map_1 = numpy.maximum(self.strength_map, 0.1)
+        self.production_map_1 = numpy.maximum(self.production_map, 0.1)
         
     def update_owner_maps(self):
         # Creates a 3-d owner map from self.owner_map
@@ -371,7 +377,7 @@ class GameMap:
         self.influence_prod_over_str_map = numpy.zeros((self.width, self.height))
         
         # Calculate the production / str maps.
-        prod_str_map = numpy.divide(self.production_map, numpy.maximum(1, self.strength_map))
+        prod_str_map = numpy.divide(self.production_map, self.strength_map_1)
         scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owned_map) * prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_neutral_map) * prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * prod_over_str_enemy_factor
         late_game_scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owned_map) * late_game_prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_neutral_map) * late_game_prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * late_game_prod_over_str_enemy_factor
         # Diffuse the production map so that high strength areas might be targeted.
@@ -599,32 +605,17 @@ class GameMap:
     def get_best_moves(self):
         # Instead of each cell acting independently, look at the board as a whole and make squares move based on that.
 
-        # Squares should always be moving towards a border. so get the list of border candidate squares
+        
         all_targets = []
-        production_squares = []
         for square in itertools.chain.from_iterable(self.squares):
             if self.border_map[square.x, square.y]:
-                if self.influence_enemy_territory_map[3, square.x, square.y] == 0:
-                    production_squares.append((square, self.recover_map[4, square.x, square.y]))
-                else: 
-                    if square.owner == 0 and square.production == 1 and square.strength > 4:
-                        continue
-                    all_targets.append((square, heuristic(square)))
+                all_targets.append((square, heuristic(square)))
                 
         # Are all cells equally valuable?
         # Let's keep the top X% of cells. 
-        production_squares.sort(key = lambda x: x[1], reverse = True)
         all_targets.sort(key = lambda x: x[1], reverse = True)
-        best_targets = all_targets[0:int(len(all_targets) * border_target_percentile)]
+        best_targets = all_targets[0:int(len(all_targets) * (1-border_target_percentile))]
 
-        if len(production_squares) > 0:
-            threshold = production_squares[0][1] / mid_game_value_threshold
-        for border in production_squares:
-            find_cell = False
-            if border[1] >= threshold:
-                find_cell = self.attack_cell(border[0], 4)
-            if find_cell: 
-                production_squares.remove(border)
         # For each border cell, depending on either the state of the game or the border itself, different valuation algorithms should occur.
         
         # Ok now that we have a list of best targets, see if we can capture any of these immediately.
@@ -634,7 +625,9 @@ class GameMap:
             if success_attack:
                 best_targets.remove(target)
 
+        
         # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
+        
         cells_to_consider_moving = []
         for square in itertools.chain.from_iterable(self.squares):
             # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
@@ -642,36 +635,16 @@ class GameMap:
                 cells_to_consider_moving.append(square)
 
         # Simple logic for now:
-        
         for square in cells_to_consider_moving:
-            
-            if square.is_border() == True:
-                # Can we attack a bordering cell?
-                targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
-                if len(targets) > 0:
-                    targets.sort(key = lambda x: heuristic(x), reverse = True)
-                    if heuristic(targets[0]) < 0 or self.recover_map[5, targets[0].x, targets[0].y] > threshold:
-                        target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y] * 2, self.border_map)
-                        target_map += (self.is_owned_map + self.is_enemy_map) * 999
-                        tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                        #square.move_to_target(self.squares[tx, ty], True)
-                        self.move_square_to_target(square, self.squares[tx, ty])
-
-                    else:
-                        square.move_to_target(targets[0], False)
-            elif square.strength > (square.production * buildup_multiplier):
-                if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
-                    #self.go_to_border(square)
-                    #self.find_nearest_enemy_direction(square)
-                    #self.find_nearest_non_owned_border(square)
-                    #self.go_to_border(square)
-                    target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y], self.border_map)
-                    target_map += (self.is_owned_map + self.is_enemy_map) * 999
-                    tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                    self.move_square_to_target(square, self.squares[tx, ty])
-                    #square.move_to_target(self.squares[tx, ty], True)
-        
-        # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.
+            if square.strength > (square.production * buildup_multiplier) and len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
+                value_map = numpy.zeros((self.width, self.height))
+                turns_to_capture = numpy.divide(numpy.maximum(self.strength_map - self.strength_map[square.x, square.y], 0), self.production_map_1)
+                value_map += numpy.multiply(self.recover_map[0] + turns_to_capture + self.dij_prod_distance_map[square.x, square.y, :, :], 1 - self.combat_zone_map - self.is_owned_map)
+                value_map += numpy.multiply(self.dij_prod_distance_map[square.x, square.y, :, :] + 2, self.combat_zone_map)
+                value_map[numpy.where(value_map == 0)] = 9999
+                tx, ty = numpy.unravel_index(value_map.argmin(), (self.width, self.height))
+                self.move_square_to_target(square, self.squares[tx, ty])
+                
        
     def attack_cell(self, target, max_cells_out = 1):
         # Will only attack the cell if sufficient strength

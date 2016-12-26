@@ -20,11 +20,11 @@ import scipy.sparse
 # Variables #
 #############
 
-botname = "shummie v25"
+botname = "shummie v26.2-8"
 
 production_decay = 0.7
 production_influence_max_distance = 12
-buildup_multiplier = 5
+buildup_multiplier = 6
 early_game_buildup_multiplier = 6
 early_game_value_threshold = 0.80
 mid_game_value_threshold = 0.75
@@ -116,7 +116,7 @@ class GameMap:
         self.create_dij_maps()
         #end = time.time()
         #logging.debug("createstrength Frame: " + str(self.frame) + " : " + str(end - start))
-        #self.create_smoothed_value_distance_map()
+        self.create_smoothed_value_distance_map()
 
         
         self.get_configs()
@@ -216,12 +216,16 @@ class GameMap:
                 
         if self.phase == 0 and numpy.sum(self.is_owned_map) > (10*(self.width * self.height)**.5) / ((self.starting_player_count**0.5) * 12):
             self.phase = 1
-        if self.phase == 1 and numpy.sum(self.is_owned_map) < (self.width * self.height * 0.2):
-            self.phase = 2
+        if self.phase == 1 and numpy.sum(self.is_neutral_map) < (self.width * self.height * 0.4):
+            self.phase = 1
+        if numpy.sum(self.combat_zone_map) > 2:
+            self.phase = 3
 
     def update_maps(self):
         
         # Create is_owner maps
+        self.update_calc_maps()
+        
         self.update_owner_maps()
         self.update_border_maps()
 
@@ -241,9 +245,13 @@ class GameMap:
         #logging.debug("update_recover_map Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
         
         #start2 = time.time()
-        #self.update_distance_maps()
+        self.update_distance_maps()
         #end2 = time.time()
         #logging.debug("update_distance_maps Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
+
+    def update_calc_maps(self):
+        self.strength_map_1 = numpy.maximum(self.strength_map, 0.1)
+        self.production_map_1 = numpy.maximum(self.production_map, 0.1)
         
     def update_owner_maps(self):
         # Creates a 3-d owner map from self.owner_map
@@ -289,9 +297,9 @@ class GameMap:
         
         self.distance_from_border = distance_from_owned(self.distance_map_no_decay, 1 - self.is_owned_map)
         self.distance_from_border[numpy.nonzero(1 - self.is_owned_map)] = 0
-        
-        self.distance_from_enemy = distance_from_owned(self.distance_map_no_decay, self.is_enemy_map)                          
-        self.distance_from_enemy[numpy.nonzero(self.is_enemy_map)] = 0
+        # disabled for singl eplayer
+        #self.distance_from_enemy = distance_from_owned(self.distance_map_no_decay, self.is_enemy_map)                          
+        #self.distance_from_enemy[numpy.nonzero(self.is_enemy_map)] = 0
 
     def create_distance_map(self, falloff = 1):
         # Creates a distance map so that we can easily divide a map to get ratios that we are interested in
@@ -371,7 +379,7 @@ class GameMap:
         self.influence_prod_over_str_map = numpy.zeros((self.width, self.height))
         
         # Calculate the production / str maps.
-        prod_str_map = numpy.divide(self.production_map, numpy.maximum(1, self.strength_map))
+        prod_str_map = numpy.divide(self.production_map, self.strength_map_1)
         scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owned_map) * prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_neutral_map) * prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * prod_over_str_enemy_factor
         late_game_scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owned_map) * late_game_prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_neutral_map) * late_game_prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * late_game_prod_over_str_enemy_factor
         # Diffuse the production map so that high strength areas might be targeted.
@@ -428,14 +436,14 @@ class GameMap:
         self.recover_map[0] = numpy.divide(self.strength_map, numpy.maximum(self.production_map, 0.01))
         self.recover_map[0] = numpy.multiply(self.recover_map[0], self.is_neutral_map)
         
-        #self.recover_map_enemy_smooth = numpy.zeros((max_distance + 1, self.width, self.height))
+        self.recover_map_enemy_smooth = numpy.zeros((max_distance + 1, self.width, self.height))
         # Smooth out enemy strength to reduce volatility in heuristic. If we are losing, will this devalue those cells too much when we should be attacking them instead?
-        #enemy_total_strength = numpy.sum(numpy.multiply(self.strength_map, self.is_enemy_map))
-        #enemy_total_squares = numpy.sum(self.is_enemy_map)
-        #enemy_average_strength = enemy_total_strength / enemy_total_squares
+        enemy_total_strength = numpy.sum(numpy.multiply(self.strength_map, self.is_enemy_map))
+        enemy_total_squares = numpy.sum(self.is_enemy_map)
+        enemy_average_strength = enemy_total_strength / enemy_total_squares
         
-        #self.recover_map_enemy_smooth[0] = numpy.divide(numpy.multiply(self.is_enemy_map, enemy_average_strength), numpy.maximum(self.production_map, 0.1))
-        #self.recover_map_enemy_smooth[0] += self.recover_map[0]
+        self.recover_map_enemy_smooth[0] = numpy.divide(numpy.multiply(self.is_enemy_map, enemy_average_strength), numpy.maximum(self.production_map, 0.1))
+        self.recover_map_enemy_smooth[0] += self.recover_map[0]
         
         self.recover_map[0] += (self.is_owned_map + self.is_enemy_map) * 999
         
@@ -451,17 +459,17 @@ class GameMap:
             
             self.recover_map[distance] = numpy.add(self.recover_map[distance - 1], numpy.amin(dir_map, 0))
             
-            #dir_map_smooth = numpy.zeros((4, self.width, self.height))
-            #dir_map_smooth[0] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, 1)
-            #dir_map_smooth[1] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, -1)
-            #dir_map_smooth[2] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 1, 0)
-            #dir_map_smooth[3] = roll_xy(self.recover_map_enemy_smooth[distance - 1], -1, 0)
+            dir_map_smooth = numpy.zeros((4, self.width, self.height))
+            dir_map_smooth[0] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, 1)
+            dir_map_smooth[1] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, -1)
+            dir_map_smooth[2] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 1, 0)
+            dir_map_smooth[3] = roll_xy(self.recover_map_enemy_smooth[distance - 1], -1, 0)
             
-            #self.recover_map_enemy_smooth[distance] = numpy.add(self.recover_map_enemy_smooth[distance - 1], numpy.amin(dir_map_smooth, 0))
+            self.recover_map_enemy_smooth[distance] = numpy.add(self.recover_map_enemy_smooth[distance - 1], numpy.amin(dir_map_smooth, 0))
         
         for d in range(1, max_distance + 1):
             self.recover_map[d] = self.recover_map[d] / d
-            #self.recover_map_enemy_smooth[d] = self.recover_map_enemy_smooth[d] / d      
+            self.recover_map_enemy_smooth[d] = self.recover_map_enemy_smooth[d] / d      
         for d in range(1, 6):
             self.recover_map_spread[d] = spread_n(self.recover_map[d], self.width // 8)  
 
@@ -489,8 +497,14 @@ class GameMap:
             #return max(self.production_map[x, y], 0.01)
             return prod_map_1[x, y]
 
+        def get_cost_recov(cellnum):
+            x = cellnum // self.height
+            y = cellnum % self.height
+            return strength_map_1[x, y] / prod_map_1[x, y]
+
         dij_str_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
         dij_prod_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
+        dij_recov_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
         
         for x in range(self.width):
             for y in range(self.height):
@@ -506,28 +520,41 @@ class GameMap:
                 dij_prod_costs[coord, ((x + 0) % self.width) * self.height + ((y + 1) % self.height)] = get_cost_prod(((x + 0) % self.width) * self.height + ((y + 1) % self.height))
                 dij_prod_costs[coord, ((x + 0) % self.width) * self.height + ((y - 1) % self.height)] = get_cost_prod(((x + 0) % self.width) * self.height + ((y - 1) % self.height))
 
+                dij_recov_costs[coord, ((x + 1) % self.width) * self.height + ((y + 0) % self.height)] = get_cost_recov(((x + 1) % self.width) * self.height + ((y + 0) % self.height))
+                dij_recov_costs[coord, ((x - 1) % self.width) * self.height + ((y + 0) % self.height)] = get_cost_recov(((x - 1) % self.width) * self.height + ((y + 0) % self.height))
+                dij_recov_costs[coord, ((x + 0) % self.width) * self.height + ((y + 1) % self.height)] = get_cost_recov(((x + 0) % self.width) * self.height + ((y + 1) % self.height))
+                dij_recov_costs[coord, ((x + 0) % self.width) * self.height + ((y - 1) % self.height)] = get_cost_recov(((x + 0) % self.width) * self.height + ((y - 1) % self.height))
+
+                
         dij_strength_cost, dij_strength_route = scipy.sparse.csgraph.dijkstra(dij_str_costs, return_predecessors = True)      
         dij_prod_cost, dij_prod_route = scipy.sparse.csgraph.dijkstra(dij_prod_costs, return_predecessors = True)          
+        dij_recov_cost, dij_recov_route = scipy.sparse.csgraph.dijkstra(dij_recov_costs, return_predecessors = True)          
 
         self.dij_strength_distance_map = numpy.zeros((self.width, self.height, self.width, self.height))
         self.dij_strength_route_map = numpy.zeros((self.width, self.height, self.width, self.height))
         self.dij_prod_distance_map = numpy.zeros((self.width, self.height, self.width, self.height))
         self.dij_prod_route_map = numpy.zeros((self.width, self.height, self.width, self.height))
+        self.dij_recov_distance_map = numpy.zeros((self.width, self.height, self.width, self.height))
+        self.dij_recov_route_map = numpy.zeros((self.width, self.height, self.width, self.height))
         
         for x in range(self.width):
             for y in range(self.height):
-                #self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
+                self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
                 self.dij_strength_route_map[x, y, :, :] = dij_strength_route[x * self.height + y].reshape((self.width, self.height))
-                #self.dij_prod_distance_map[x, y, :, :] = dij_prod_cost[x * self.height + y].reshape((self.width, self.height))    
+                self.dij_prod_distance_map[x, y, :, :] = dij_prod_cost[x * self.height + y].reshape((self.width, self.height))    
                 self.dij_prod_route_map[x, y, :, :] = dij_prod_route[x * self.height + y].reshape((self.width, self.height))        
+                self.dij_recov_distance_map[x, y, :, :] = dij_recov_cost[x * self.height + y].reshape((self.width, self.height))    
+                self.dij_recov_route_map[x, y, :, :] = dij_recov_route[x * self.height + y].reshape((self.width, self.height))        
+                
                 
     def create_smoothed_value_distance_map(self):
         self.smoothed_value_distance_map = numpy.zeros((self.width, self.height))
         for x in range(self.width):
             for y in range(self.height):
-                smoothed_value = numpy.divide(self.production_map, self.dij_strength_distance_map[x, y])
+                #smoothed_value = numpy.divide(self.production_map, self.dij_strength_distance_map[x, y])
+                smoothed_value = numpy.divide(self.dij_strength_distance_map[x, y], numpy.maximum(self.dij_prod_distance_map[x,y], 1))
                 smoothed_value[x, y] = 0
-                self.smoothed_value_distance_map = numpy.sum(smoothed_value)
+                self.smoothed_value_distance_map[x, y] = numpy.sum(smoothed_value)
 
         
          
@@ -577,64 +604,34 @@ class GameMap:
                     sq.move = 4
                 move_list.append(sq)
         
-        send_string(' '.join(str(square.x) + ' ' + str(square.y) + ' ' + str(translate_cardinal(square.move)) for square in move_list))
-
-    def new_get_moves(self):
-        
-        turns_to_recover = numpy.divide(numpy.maximum(self.strength_map, 1), self.production_map)
-        
-        for square in itertools.chain.from_iterable(self.squares):
-            if square.owner == self.my_id:
-                if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2 and square.strength > (square.production * buildup_multiplier) and (square.move == -1 or square.move == STILL):
-                    turns_to_capture = numpy.divide(numpy.maximum(self.strength_map - self.strength_map[square.x, square.y], 0), numpy.maximum(self.production_map, 0.1))
-                    production_value = numpy.multiply(self.production_map, (1 - self.is_owned_map))
-                    value_map = numpy.divide(production_value, self.distance_map_no_decay ** 2 + turns_to_capture + turns_to_recover)
-                    value_map += numpy.multiply(self.smoothed_value_distance_map, self.is_neutral_map - self.combat_zone_map)
-                    tx, ty = numpy.unravel_index(value_map.argmax(), (self.width, self.height))
-                    square.move_to_target(self.squares[tx, ty], True)
-                    
-                    
+        send_string(' '.join(str(square.x) + ' ' + str(square.y) + ' ' + str(translate_cardinal(square.move)) for square in move_list))         
         
         
     def get_best_moves(self):
         # Instead of each cell acting independently, look at the board as a whole and make squares move based on that.
 
-        # Squares should always be moving towards a border. so get the list of border candidate squares
         all_targets = []
-        production_squares = []
         for square in itertools.chain.from_iterable(self.squares):
             if self.border_map[square.x, square.y]:
-                if self.influence_enemy_territory_map[3, square.x, square.y] == 0:
-                    production_squares.append((square, self.recover_map[4, square.x, square.y]))
-                else: 
-                    if square.owner == 0 and square.production == 1 and square.strength > 4:
-                        continue
-                    all_targets.append((square, heuristic(square)))
+                all_targets.append((square, self.recover_map[4, square.x, square.y]))
                 
         # Are all cells equally valuable?
         # Let's keep the top X% of cells. 
-        production_squares.sort(key = lambda x: x[1], reverse = True)
-        all_targets.sort(key = lambda x: x[1], reverse = True)
-        best_targets = all_targets[0:int(len(all_targets) * border_target_percentile)]
+        all_targets.sort(key = lambda x: x[1])
+        best_targets = all_targets[0:int(len(all_targets) * (1-border_target_percentile))]
 
-        if len(production_squares) > 0:
-            threshold = production_squares[0][1] / mid_game_value_threshold
-        for border in production_squares:
-            find_cell = False
-            if border[1] >= threshold:
-                find_cell = self.attack_cell(border[0], 4)
-            if find_cell: 
-                production_squares.remove(border)
         # For each border cell, depending on either the state of the game or the border itself, different valuation algorithms should occur.
         
         # Ok now that we have a list of best targets, see if we can capture any of these immediately.
-        cells_out = 3
+        cells_out = 4
         for target in best_targets:
             success_attack = self.attack_cell(target[0], cells_out)
             if success_attack:
                 best_targets.remove(target)
 
+        
         # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
+        
         cells_to_consider_moving = []
         for square in itertools.chain.from_iterable(self.squares):
             # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
@@ -642,36 +639,33 @@ class GameMap:
                 cells_to_consider_moving.append(square)
 
         # Simple logic for now:
-        
         for square in cells_to_consider_moving:
+            if self.inner_border_map[square.x, square.y] and square.strength > (square.production * buildup_multiplier):
+                combat_squares = []
+                for n in square.neighbors():
+                    if n.strength == 0 and n.owner == 0:
+                        combat_squares.append(n)
+                if combat_squares != []:
+                    combat_squares.sort(key = lambda x: self.influence_enemy_strength_map[1, x.x, x.y], reverse = True)
+                    square.move_to_target(combat_squares[0], False)
+                    continue
+            #if square.strength > (square.production * buildup_multiplier) and len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
+            value_map = numpy.zeros((self.width, self.height))
+            turns_to_capture = numpy.divide(numpy.maximum(self.strength_map - self.strength_map[square.x, square.y], 0), self.production_map_1[square.x, square.y])
+            #value_map += numpy.multiply(self.recover_map_enemy_smooth[4] + self.dij_recov_distance_map[square.x, square.y] * 2, self.is_neutral_map - self.combat_zone_map)
+            value_map += numpy.multiply(self.recover_map_enemy_smooth[5] + self.distance_map_no_decay[square.x, square.y] * 1.4, self.is_neutral_map - self.combat_zone_map)
+            #value_map += numpy.multiply(self.recover_map_enemy_smooth[6] + self.dij_recov_distance_map[square.x, square.y] * 2, self.is_enemy_map)
+            #value_map += numpy.multiply(self.distance_map_no_decay[square.x, square.y], self.combat_zone_map)
+            value_map[numpy.where(value_map == 0)] = 9999            
+            tx, ty = numpy.unravel_index(value_map.argmin(), (self.width, self.height))
+            target = self.squares[tx, ty]
             
-            if square.is_border() == True:
-                # Can we attack a bordering cell?
-                targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
-                if len(targets) > 0:
-                    targets.sort(key = lambda x: heuristic(x), reverse = True)
-                    if heuristic(targets[0]) < 0 or self.recover_map[5, targets[0].x, targets[0].y] > threshold:
-                        target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y] * 2, self.border_map)
-                        target_map += (self.is_owned_map + self.is_enemy_map) * 999
-                        tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                        #square.move_to_target(self.squares[tx, ty], True)
-                        self.move_square_to_target(square, self.squares[tx, ty])
-
-                    else:
-                        square.move_to_target(targets[0], False)
-            elif square.strength > (square.production * buildup_multiplier):
-                if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
-                    #self.go_to_border(square)
-                    #self.find_nearest_enemy_direction(square)
-                    #self.find_nearest_non_owned_border(square)
-                    #self.go_to_border(square)
-                    target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y], self.border_map)
-                    target_map += (self.is_owned_map + self.is_enemy_map) * 999
-                    tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                    self.move_square_to_target(square, self.squares[tx, ty])
-                    #square.move_to_target(self.squares[tx, ty], True)
-        
-        # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.
+            if self.inner_border_map[square.x, square.y] and square.strength > (square.production * buildup_multiplier) and (square.strength > 100 or (square.x + square.y) % 2 == self.frame % 2):
+                square.move_to_target(target, False)
+            elif square.strength > (square.production * buildup_multiplier) and (square.strength > 100 or (square.x + square.y) % 2 == self.frame % 2):
+                #self.find_nearest_non_npc_enemy_direction(square)
+                square.move_to_target(self.squares[tx, ty], True)
+                
        
     def attack_cell(self, target, max_cells_out = 1):
         # Will only attack the cell if sufficient strength
@@ -722,11 +716,9 @@ class GameMap:
                     moving_cells.sort(key = lambda x: x.strength, reverse = True)
                     for square in moving_cells:
                         if cells_out == 1:
-                            #square.move_to_target(target, False)
-                            self.move_square_to_target(square, target)
+                            square.move_to_target(target, False)
                         else:
-                            self.move_square_to_target(square, target)
-                            #square.move_to_target(target, True)
+                            square.move_to_target(target, True)
                         needed_strength_from_movers -= square.strength
                         if needed_strength_from_movers < 0:
                             break
@@ -818,29 +810,19 @@ class GameMap:
     def get_best_moves_late_game(self):
         # Instead of each cell acting independently, look at the board as a whole and make squares move based on that.
         # Squares should always be moving towards a border. so get the list of border candidate squares
-        
-        all_targets = []
-        for square in itertools.chain.from_iterable(self.squares):
-            if self.border_map[square.x, square.y]:
-                all_targets.append((square, self.heuristic_map[square.x, square.y]))
-                
-        # Are all cells equally valuable?
-        # Let's keep the top X% of cells. 
-        all_targets.sort(key = lambda x: x[1], reverse = True)
-        best_targets = all_targets[0:int(len(all_targets) * border_target_percentile)]
 
-        # For each border cell, depending on either the state of the game or the border itself, different valuation algorithms should occur.
-        
+        enemy_squares = []
+        for square in itertools.chain.from_iterable(self.squares):
+            if self.combat_zone_map[square.x, square.y]:
+                enemy_squares.append(square)
+                
         # Ok now that we have a list of best targets, see if we can capture any of these immediately.
-        cells_out = 3
-        for target in best_targets:
-            success_attack = self.attack_cell(target[0], cells_out)
-            if success_attack:
-                best_targets.remove(target)
+        cells_out = 2
+        for target in enemy_squares:
+            self.attack_cell(target, cells_out)
 
         
         # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
-        
         cells_to_consider_moving = []
         for square in itertools.chain.from_iterable(self.squares):
             # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
@@ -849,51 +831,35 @@ class GameMap:
 
         # Simple logic for now:
         for square in cells_to_consider_moving:
-            if square.is_border() == True:
-                # Can we attack a bordering cell?
-                targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
-                if len(targets) > 0:
-                    targets.sort(key = lambda x: heuristic(x), reverse = True)
-                    self.move_square_to_target(square, targets[0])
-                    #square.move_to_target(targets[0], False)
-            elif square.strength > (square.production * late_game_buildup_multiplier):
-                #self.go_to_border(square)
-                if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
-                    self.find_nearest_non_npc_enemy_direction(square)
-                #self.find_nearest_enemy_border(square)
-                #self.go_to_border(square)
-        
-        # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.        
+            # Find an enemy square to attack!
+            if square.strength > (square.production * late_game_buildup_multiplier) and (square.x + square.y) % 2 == self.frame % 2:
+                value_map = numpy.zeros((self.width, self.height))
+                value_map += numpy.multiply(numpy.divide(self.influence_enemy_strength_map[3], self.distance_map_no_decay[square.x, square.y]), self.is_enemy_map)
+                tx, ty = numpy.unravel_index(value_map.argmax(), (self.width, self.height))
+                target = self.squares[tx, ty]
+                square.move_to_target(target, False)
 
+    def all_out_attack(self):
+        cells_to_consider_moving = []
+        for square in itertools.chain.from_iterable(self.squares):
+            # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
+            if square.owner == self.my_id and (square.move == -1 or square.move == STILL) and square.strength > (square.production * late_game_buildup_multiplier):
+                cells_to_consider_moving.append(square)
+              
+        for square in cells_to_consider_moving:
+#            # Find an enemy square to attack!
+#            #if (square.x + square.y) % 2 == self.frame % 2:
+#            value_map = numpy.zeros((self.width, self.height))
+#            #value_map += numpy.multiply(numpy.divide(self.influence_enemy_strength_map[3], self.dij_prod_distance_map[square.x, square.y]), self.combat_zone_map)
+#            value_map += numpy.multiply(self.distance_map_no_decay[square.x, square.y], self.is_enemy_map)
+#            tx, ty = numpy.unravel_index(value_map.argmax(), (self.width, self.height))
+#            target = self.squares[tx, ty]
+#            square.move_to_target(target, False)
+            self.find_nearest_non_npc_enemy_direction(square)
+            
     def get_xy_from_index(self, num):
         return (num // self.height, num % self.height)
         
-    def move_square_to_target(self, square, target):
-        # Attempts to move the square to the designated target
-        # If all neighbors are friendly, then we will use dijkstra_prod_map to move
-        # If not all neighbors are friendly, we will use dijkstra_strength_map to move
-        # If Dijkstra strength tries to move into an enemy square, default back to the old move_to_target function.
-        # If we are attempting to move into a square with > strength than what we have, just stay still instead.
-        
-        # Check if we are part of border:
-        if not self.inner_border_map[square.x, square.y]:
-            # We're surrounded by friendlies, move using dij path
-            tx, ty = self.get_xy_from_index(self.dij_prod_route_map[target.x, target.y, square.x, square.y])
-            # Cheat and use the old move_to_target to handle collision routing
-            square.move_to_target(self.squares[tx, ty], True)
-        else:
-            # Try to move using dij_strength
-            tx, ty = self.get_xy_from_index(self.dij_strength_route_map[target.x, target.y, square.x, square.y])
-            adj_target = self.squares[tx, ty]
-            if adj_target.owner == self.my_id:
-                square.move_to_target(adj_target, True)
-            elif square.strength > adj_target.strength:
-                square.move_to_target(adj_target, False)
-            else:
-                return
-            
-            
-            
             
                 
         
@@ -948,118 +914,186 @@ class Square:
         return self._is_border
                 
     def move_to_target(self, target, through_friendly):
-
-        # Attempts to move to the designated target
-        # Does so naively. Perhaps replace this with an A* or Dijkstra's algorithm at some point
-    
-        # Calculate cardinal direction distance to target.
-        dist_w = (self.x - target.x) % self.game_map.width
-        dist_e = (target.x - self.x) % self.game_map.width
-        dist_n = (self.y - target.y) % self.game_map.height
-        dist_s = (target.y - self.y) % self.game_map.height        
         
-        if dist_w == 0 and dist_n == 0:
+        # Attempts to move the square to the designated target
+        # If all neighbors are friendly, then we will use dijkstra_prod_map to move
+        # If not all neighbors are friendly, we will use dijkstra_strength_map to move
+        # If Dijkstra strength tries to move into an enemy square, default back to the old move_to_target function.
+        # If we are attempting to move into a square with > strength than what we have, just stay still instead.
+        if target == self:
             return False
+        possible_moves = []
 
-        w_neighbor = self.game_map.get_target(self, WEST)            
-        e_neighbor = self.game_map.get_target(self, EAST)
-        n_neighbor = self.game_map.get_target(self, NORTH)
-        s_neighbor = self.game_map.get_target(self, SOUTH)
-        
-        ew_swap = False
-        ns_swap = False
-        
-        if dist_w < dist_e:
-            if through_friendly and w_neighbor.owner != self.game_map.my_id:
-                if e_neighbor.owner == self.game_map.my_id:
-                    ew_move = (EAST, e_neighbor)
-                    ew_swap = True
-                else:
-                    ew_move = None
-            else: 
-                ew_move = (WEST, w_neighbor)
-        elif dist_e < dist_w:
-            if through_friendly and e_neighbor.owner != self.game_map.my_id:
-                if w_neighbor.owner == self.game_map.my_id:
-                    ew_move = (WEST, w_neighbor)
-                    ew_swap = True
-                else:
-                    ew_move = None
-            else: 
-                ew_move = (EAST, e_neighbor)
-        elif dist_w == 0:
-            ew_move = None
-        elif dist_w == dist_e:
-            if through_friendly and (w_neighbor.owner != self.game_map.my_id or e_neighbor.owner != self.game_map.my_id):
-                if w_neighbor.owner != self.game_map.my_id and e_neighbor.owner != self.game_map.my_id:
-                    ew_move = None
-                elif w_neighbor.owner == self.game_map.my_id and e_neighbor.owner != self.game_map.my_id:
-                    ew_move = (WEST, w_neighbor)
-                else:
-                    ew_move = (EAST, e_neighbor)
-            else:
-                # Prefer the move with lower production
-                if e_neighbor.production < w_neighbor.production:
-                    ew_move = (EAST, e_neighbor)
-                else:
-                    ew_move = (WEST, w_neighbor)
-                               
-        if dist_s < dist_n:
-            if through_friendly and s_neighbor.owner != self.game_map.my_id:
-                if n_neighbor.owner == self.game_map.my_id:
-                    ns_move = (NORTH, n_neighbor)
-                    ns_swap = True
-                else:
-                    ns_move = None
-            else: 
-                ns_move = (SOUTH, s_neighbor)
-        elif dist_n < dist_s:
-            if through_friendly and n_neighbor.owner != self.game_map.my_id:
-                if s_neighbor.owner == self.game_map.my_id:
-                    ns_move = (SOUTH, s_neighbor)
-                    ns_swap = True
-                else:
-                    ns_move = None
-            else: 
-                ns_move = (NORTH, n_neighbor)
-        elif dist_s == 0:
-            ns_move = None
-        elif dist_s == dist_n:
-            if through_friendly and (s_neighbor.owner != self.game_map.my_id or n_neighbor.owner != self.game_map.my_id):
-                if s_neighbor.owner != self.game_map.my_id and n_neighbor.owner != self.game_map.my_id:
-                    ns_move = None
-                elif s_neighbor.owner == self.game_map.my_id and n_neighbor.owner != self.game_map.my_id:
-                    ns_move = (SOUTH, s_neighbor)
-                else:
-                    ns_move = (NORTH, n_neighbor)
-            else:
-                # Prefer the move with lower production
-                if n_neighbor.production < s_neighbor.production:
-                    ns_move = (NORTH, n_neighbor)
-                else:
-                    ns_move = (SOUTH, s_neighbor)
-                             
-        if ns_move == None and ew_move == None:
-            return False
-
-        possible_moves = []            
-        if ns_move == None:
-            possible_moves.append(ew_move)
-        elif ew_move == None:
-            possible_moves.append(ns_move)
-        elif ns_swap == True and ew_swap == False:
-            possible_moves.append(ew_move)
-            possible_moves.append(ns_move)
-        elif ns_swap == False and ew_swap == True:
-            possible_moves.append(ns_move)
-            possible_moves.append(ew_move)
+        # Check if we are part of border:
+        if not self.game_map.inner_border_map[self.x, self.y]:
+            # We're surrounded by friendlies, move using dij path
+            tx, ty = self.game_map.get_xy_from_index(game_map.dij_prod_route_map[target.x, target.y, self.x, self.y])
+            # Cheat and use the old move_to_target to handle collision routing
+            dx = tx - self.x
+            dy = ty - self.y
+            if dx == 1 or dx < -1:
+                direction = EAST
+            elif dx == -1 or dx > 1:
+                direction = WEST
+            elif dy == 1 or dy < -1:
+                direction = SOUTH
+            elif dy == -1 or dy > 1:
+                direction = NORTH
+            
+            target = self.game_map.squares[tx, ty]
+            possible_moves.append((direction, target))
+                
         else:
-            if ew_move[1].production < ns_move[1].production:
-                possible_moves.append(ew_move)
-                possible_moves.append(ns_move)
+            # Try to move using dij_strength
+            tx, ty = self.game_map.get_xy_from_index(self.game_map.dij_strength_route_map[target.x, target.y, self.x, self.y])
+            #tx, ty = self.game_map.get_xy_from_index(self.game_map.dij_recov_route_map[target.x, target.y, self.x, self.y])
+            if tx < 0:
+                # We hit an error
+                return False
+            adj_target = self.game_map.squares[tx, ty]
+            if adj_target.owner == self.game_map.my_id:
+                dx = tx - self.x
+                dy = ty - self.y
+                
+                if dx == 1 or dx < -1:
+                    direction = EAST
+                elif dx == -1 or dx > 1:
+                    direction = WEST
+                elif dy == 1 or dy < -1:
+                    direction = SOUTH
+                elif dy == -1 or dy > 1:
+                    direction = NORTH
+            
+                target = self.game_map.squares[tx, ty]
+                possible_moves.append((direction, target))
+
+            elif self.strength > adj_target.strength:
+                dx = tx - self.x
+                dy = ty - self.y
+                
+                if dx == 1 or dx < -1:
+                    direction = EAST
+                elif dx == -1 or dx > 1:
+                    direction = WEST
+                elif dy == 1 or dy < -1:
+                    direction = SOUTH
+                elif dy == -1 or dy > 1:
+                    direction = NORTH
+            
+                target = game_map.squares[tx, ty]
+                possible_moves.append((direction, target))
             else:
-                possible_moves.append(ns_move)
-                possible_moves.append(ew_move)
+                # Attempts to move to the designated target
+                # Does so naively. Perhaps replace this with an A* or Dijkstra's algorithm at some point
+            
+                # Calculate cardinal direction distance to target.
+                dist_w = (self.x - target.x) % self.game_map.width
+                dist_e = (target.x - self.x) % self.game_map.width
+                dist_n = (self.y - target.y) % self.game_map.height
+                dist_s = (target.y - self.y) % self.game_map.height        
+                
+                if dist_w == 0 and dist_n == 0:
+                    return False
+        
+                w_neighbor = self.game_map.get_target(self, WEST)            
+                e_neighbor = self.game_map.get_target(self, EAST)
+                n_neighbor = self.game_map.get_target(self, NORTH)
+                s_neighbor = self.game_map.get_target(self, SOUTH)
+                
+                ew_swap = False
+                ns_swap = False
+                
+                if dist_w < dist_e:
+                    if through_friendly and w_neighbor.owner != self.game_map.my_id:
+                        if e_neighbor.owner == self.game_map.my_id:
+                            ew_move = (EAST, e_neighbor)
+                            ew_swap = True
+                        else:
+                            ew_move = None
+                    else: 
+                        ew_move = (WEST, w_neighbor)
+                elif dist_e < dist_w:
+                    if through_friendly and e_neighbor.owner != self.game_map.my_id:
+                        if w_neighbor.owner == self.game_map.my_id:
+                            ew_move = (WEST, w_neighbor)
+                            ew_swap = True
+                        else:
+                            ew_move = None
+                    else: 
+                        ew_move = (EAST, e_neighbor)
+                elif dist_w == 0:
+                    ew_move = None
+                elif dist_w == dist_e:
+                    if through_friendly and (w_neighbor.owner != self.game_map.my_id or e_neighbor.owner != self.game_map.my_id):
+                        if w_neighbor.owner != self.game_map.my_id and e_neighbor.owner != self.game_map.my_id:
+                            ew_move = None
+                        elif w_neighbor.owner == self.game_map.my_id and e_neighbor.owner != self.game_map.my_id:
+                            ew_move = (WEST, w_neighbor)
+                        else:
+                            ew_move = (EAST, e_neighbor)
+                    else:
+                        # Prefer the move with lower production
+                        if e_neighbor.production < w_neighbor.production:
+                            ew_move = (EAST, e_neighbor)
+                        else:
+                            ew_move = (WEST, w_neighbor)
+                                       
+                if dist_s < dist_n:
+                    if through_friendly and s_neighbor.owner != self.game_map.my_id:
+                        if n_neighbor.owner == self.game_map.my_id:
+                            ns_move = (NORTH, n_neighbor)
+                            ns_swap = True
+                        else:
+                            ns_move = None
+                    else: 
+                        ns_move = (SOUTH, s_neighbor)
+                elif dist_n < dist_s:
+                    if through_friendly and n_neighbor.owner != self.game_map.my_id:
+                        if s_neighbor.owner == self.game_map.my_id:
+                            ns_move = (SOUTH, s_neighbor)
+                            ns_swap = True
+                        else:
+                            ns_move = None
+                    else: 
+                        ns_move = (NORTH, n_neighbor)
+                elif dist_s == 0:
+                    ns_move = None
+                elif dist_s == dist_n:
+                    if through_friendly and (s_neighbor.owner != self.game_map.my_id or n_neighbor.owner != self.game_map.my_id):
+                        if s_neighbor.owner != self.game_map.my_id and n_neighbor.owner != self.game_map.my_id:
+                            ns_move = None
+                        elif s_neighbor.owner == self.game_map.my_id and n_neighbor.owner != self.game_map.my_id:
+                            ns_move = (SOUTH, s_neighbor)
+                        else:
+                            ns_move = (NORTH, n_neighbor)
+                    else:
+                        # Prefer the move with lower production
+                        if n_neighbor.production < s_neighbor.production:
+                            ns_move = (NORTH, n_neighbor)
+                        else:
+                            ns_move = (SOUTH, s_neighbor)
+                                     
+                if ns_move == None and ew_move == None:
+                    return False
+        
+              
+                if ns_move == None:
+                    possible_moves.append(ew_move)
+                elif ew_move == None:
+                    possible_moves.append(ns_move)
+                elif ns_swap == True and ew_swap == False:
+                    possible_moves.append(ew_move)
+                    possible_moves.append(ns_move)
+                elif ns_swap == False and ew_swap == True:
+                    possible_moves.append(ns_move)
+                    possible_moves.append(ew_move)
+                else:
+                    if ew_move[1].production < ns_move[1].production:
+                        possible_moves.append(ew_move)
+                        possible_moves.append(ns_move)
+                    else:
+                        possible_moves.append(ns_move)
+                        possible_moves.append(ew_move)
                 
         # We now have a list of possible moves of either length 1 or 2, and only along the x or y axis.
         # Can we safely move into one of these squares?
@@ -1214,7 +1248,7 @@ def roll_y(M, y):
 def roll_xy(M, x, y):
     return numpy.roll(numpy.roll(M, x, 0), y, 1)
 
-def spread_n(M, n, decay = 1, include_self = True):
+def spread_n(M, n, decay = 0, include_self = True):
     # Takes a matrix M, and then creates an influence map by offsetting by N in every direction. 
     # Decay function is currently of the form exp(-decay * distance)
     if include_self == True:
@@ -1255,6 +1289,27 @@ def distance_from_owned(M, mine):
 ########################
 # Core logic functions #    
 ########################
+
+def heuristic_2(cell):
+
+    if cell.owner == game_map.my_id:
+        return 0
+        
+    cell_neighbors = cell.neighbors()        
+    bordered_by_hostile = False
+    for c in cell_neighbors:
+        if c.owner != 0 and c.owner != game_map.my_id:
+            bordered_by_hostile = True
+
+    if cell.owner == 0 and not bordered_by_hostile and cell.strength / max(0.01, cell.production) > game_map.turns_left * 0.8:
+        return 0            
+            
+    value_map = numpy.zeros((game_map.width, game_map.height))
+
+    value_map += numpy.multiply(game_map.recover_map[5], game_map.is_neutral_map - game_map.combat_zone_map)
+    value_map += numpy.multiply(game_map.combat_zone_map, 5)
+
+    return value_map[cell.x, cell.y]
 
 def heuristic(cell, source = None):
 
@@ -1337,8 +1392,8 @@ def first_turns_heuristic():
             #    square.move_to_target(border_squares[0][0], True)
             #else:
             if game_map.get_distance(square, border_squares[0][0]) > 2:
-                #square.move_to_target(border_squares[0][0], True)
-                game_map.move_square_to_target(square, border_squares[0][0])
+                square.move_to_target(border_squares[0][0], True)
+
 
 #############
 # Game Loop #
@@ -1352,20 +1407,25 @@ def game_loop():
     # Have each individual square decide on their own movement
 
     if game_map.phase == 0:
-        #start = time.time()
+        start = time.time()
         first_turns_heuristic()
-        #end = time.time()
-        #logging.debug("phase 0 Frame: " + str(game_map.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("phase 0 Frame: " + str(game_map.frame) + " : " + str(end - start))
     elif game_map.phase == 1:
-        #start = time.time()
+        start = time.time()
         game_map.get_best_moves()
-        #end = time.time()
-        #logging.debug("phase 1 Frame: " + str(game_map.frame) + " : " + str(end - start))
-    else: # game_map.phase = 2
-        #start = time.time()
+        end = time.time()
+        logging.debug("phase 1 Frame: " + str(game_map.frame) + " : " + str(end - start))
+    elif game_map.phase == 2: # game_map.phase = 2
+        start = time.time()
         game_map.get_best_moves_late_game()
-        #end = time.time()
-        #logging.debug("phase 2 Frame: " + str(game_map.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("phase 2 Frame: " + str(game_map.frame) + " : " + str(end - start))
+    elif game_map.phase == 3:
+        start = time.time()
+        game_map.all_out_attack()
+        end = time.time()
+        logging.debug("phase 3 Frame: " + str(game_map.frame) + " : " + str(end - start))
     game_map.send_frame()
 
 

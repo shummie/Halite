@@ -14,13 +14,12 @@ import logging
 import numpy
 import random
 import time
-import scipy.sparse
 
 #############
 # Variables #
 #############
 
-botname = "shummie v25"
+botname = "shummie v18.1-1"
 
 production_decay = 0.7
 production_influence_max_distance = 12
@@ -42,14 +41,14 @@ prod_over_str_self_factor = -2
 prod_over_str_neutral_factor = 1.25
 prod_over_str_enemy_factor = 3
 enemy_strength_0_influence_factor = 12
-enemy_strength_1_influence_factor = 20 # Sample values around 4-20
+enemy_strength_1_influence_factor = 8 # Sample values around 4-20
 enemy_strength_2_influence_factor = 4 # Sample values around 2-40
 enemy_strength_3_influence_factor = 1 # Sample values around 2-50
 enemy_territory_1 = 50
 enemy_territory_2 = 25
-enemy_territory_3 = 0
+enemy_territory_3 = 10
 
-late_game_buildup_multiplier = 4
+late_game_buildup_multiplier = 6
 late_game_production_self_factor = -1
 late_game_production_neutral_factor = 2
 late_game_production_enemy_factor = 5
@@ -65,7 +64,7 @@ late_game_enemy_strength_2_influence_factor = 2 # Sample values around 2-40
 late_game_enemy_strength_3_influence_factor = -2 # Sample values around 2-50
 late_game_enemy_territory_1 = 20
 late_game_enemy_territory_2 = 10
-late_game_enemy_territory_3 = 0
+late_game_enemy_territory_3 = -4
 
 #################
 # GameMap Class #
@@ -109,15 +108,8 @@ class GameMap:
         self.starting_player_count = numpy.amax(self.owner_map) # Note, for range you'd need to increase the range by 1
         
         # Create the distance map
-        #self.distance_map = self.create_distance_map()        
+        self.distance_map = self.create_distance_map()        
         self.distance_map_no_decay = self.create_distance_map(1)
-        
-        #start = time.time()
-        self.create_dij_maps()
-        #end = time.time()
-        #logging.debug("createstrength Frame: " + str(self.frame) + " : " + str(end - start))
-        #self.create_smoothed_value_distance_map()
-
         
         self.get_configs()
         # Send the botname
@@ -214,7 +206,7 @@ class GameMap:
         
         self.update_maps()
                 
-        if self.phase == 0 and numpy.sum(self.is_owned_map) > (10*(self.width * self.height)**.5) / ((self.starting_player_count**0.5) * 12):
+        if self.phase == 0 and numpy.sum(self.is_owned_map) > (10*(self.width * self.height)**.5) / ((self.starting_player_count**0.5) * 20):
             self.phase = 1
         if self.phase == 1 and numpy.sum(self.is_owned_map) < (self.width * self.height * 0.2):
             self.phase = 2
@@ -226,27 +218,25 @@ class GameMap:
         self.update_border_maps()
 
         # Create the list of border squares
-        #start2 = time.time()
         self.create_influence_production_map()
         self.update_influence_enemy_strength_maps()
         self.create_influence_prod_over_str_map()
-        #end2 = time.time()
-        #logging.debug("influnce maps Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
         
         self.create_heuristic_map()
         
-        #start2 = time.time()
+        #start = time.time()
         self.update_recover_map()
-        #end2 = time.time()
-        #logging.debug("update_recover_map Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
+        #end = time.time()
+        #logging.debug("update_recover_map Frame: " + str(game_map.frame) + " : " + str(end - start))
         
-        #start2 = time.time()
-        #self.update_distance_maps()
-        #end2 = time.time()
-        #logging.debug("update_distance_maps Frame: " + str(game_map.frame) + " : " + str(end2 - start2))
+        self.update_distance_maps()
         
     def update_owner_maps(self):
         # Creates a 3-d owner map from self.owner_map
+        self.is_owner_map = numpy.zeros((self.starting_player_count + 1, self.width, self.height))
+        for x in range(self.width):
+            for y in range(self.height):
+                self.is_owner_map[self.owner_map[x, y], x, y] = 1
 
         self.is_enemy_map = numpy.zeros((self.width, self.height), dtype = bool)
         self.is_neutral_map = numpy.zeros((self.width, self.height), dtype = bool)
@@ -261,12 +251,12 @@ class GameMap:
         self.border_map = numpy.zeros((self.width, self.height))
         
         # Roll the territories we own around by 1 square in all directions
-        self.border_map = spread_n(self.is_owned_map * 1.0, 1)
+        self.border_map = spread_n(self.is_owner_map[self.my_id], 1)
         self.border_map = numpy.minimum(self.border_map, 1)
         
         # Take out our border
         # 1's means the cells that are bordering but not in our territory
-        self.border_map -= self.is_owned_map
+        self.border_map -= self.is_owner_map[self.my_id]
         
         # Create the enemy border map
         # For now, we won't distinguish between enemies...
@@ -329,8 +319,8 @@ class GameMap:
         # Take the base production map and alter it based on who controls it
         #modified_production_map = numpy.multiply(self.production_map, self.is_owner_map[self.my_id]) * production_self_factor + numpy.multiply(self.production_map, self.is_owner_map[0]) * production_neutral_factor + numpy.multiply(self.production_map, self.is_enemy_map) * production_enemy_factor
 
-        self_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_owned_map * 1.0), production_self_factor)
-        neutral_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_neutral_map), production_neutral_factor) 
+        self_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_owner_map[self.my_id]), production_self_factor)
+        neutral_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_owner_map[0]), production_neutral_factor) 
         enemy_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_enemy_map), production_enemy_factor)
         #modified_production_map = numpy.sum(numpy.sum(self_prod_map, neutral_prod_map), enemy_prod_map)
         modified_production_map = self_prod_map + neutral_prod_map + enemy_prod_map
@@ -339,8 +329,8 @@ class GameMap:
         self.influence_production_map = spread_n(modified_production_map, production_decay, production_influence_max_distance)
         
         
-        self_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_owned_map * 1.0), late_game_production_self_factor)
-        neutral_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_neutral_map), late_game_production_neutral_factor) 
+        self_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_owner_map[self.my_id]), late_game_production_self_factor)
+        neutral_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_owner_map[0]), late_game_production_neutral_factor) 
         enemy_prod_map = numpy.multiply(numpy.multiply(self.production_map, self.is_enemy_map), late_game_production_enemy_factor)
         #modified_production_map = numpy.sum(numpy.sum(self_prod_map, neutral_prod_map), enemy_prod_map)
         modified_production_map = self_prod_map + neutral_prod_map + enemy_prod_map
@@ -360,7 +350,7 @@ class GameMap:
         self.influence_enemy_strength_map = numpy.zeros((10, self.width, self.height))
         self.influence_enemy_territory_map = numpy.zeros((10, self.width, self.height))
 
-        for x in range(9):
+        for x in range(10):
             # Note, we create a lot of these not necessarily because they're useful, but we can use it to see how far away we are from enemy territory.
             self.influence_enemy_strength_map[x] = spread_n(enemy_strength_map, x)
             self.influence_enemy_territory_map[x] = numpy.minimum(self.influence_enemy_strength_map[x], 1)
@@ -372,13 +362,13 @@ class GameMap:
         
         # Calculate the production / str maps.
         prod_str_map = numpy.divide(self.production_map, numpy.maximum(1, self.strength_map))
-        scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owned_map) * prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_neutral_map) * prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * prod_over_str_enemy_factor
-        late_game_scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owned_map) * late_game_prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_neutral_map) * late_game_prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * late_game_prod_over_str_enemy_factor
+        scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owner_map[self.my_id]) * prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_owner_map[0]) * prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * prod_over_str_enemy_factor
+        late_game_scaled_prod_str_map = numpy.multiply(prod_str_map, self.is_owner_map[self.my_id]) * late_game_prod_over_str_self_factor + numpy.multiply(prod_str_map, self.is_owner_map[0]) * late_game_prod_over_str_neutral_factor + numpy.multiply(prod_str_map, self.is_enemy_map) * late_game_prod_over_str_enemy_factor
         # Diffuse the production map so that high strength areas might be targeted.
         self.influence_prod_over_str_map = spread_n(scaled_prod_str_map, production_decay, production_influence_max_distance)
         self.late_game_influence_prod_over_str_map = spread_n(late_game_scaled_prod_str_map, production_decay, production_influence_max_distance)
     
-        self.influence_prod_over_str_map -= numpy.multiply(self.influence_prod_over_str_map, self.is_owned_map)
+        self.influence_prod_over_str_map -= numpy.multiply(self.influence_prod_over_str_map, self.is_owner_map[self.my_id])
         
     def create_heuristic_map(self):
         self.heuristic_map = numpy.zeros((self.width, self.height))
@@ -387,12 +377,12 @@ class GameMap:
         
             #self.heuristic_map += production_square_influence_factor * cell.production / max(cell.strength, 1)
             #cell_value += game_map.influence_production_map[cell.x, cell.y] * production_influence_factor
-            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_neutral_map[0]) * prod_over_str_neutral_factor
-            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_owned_map) * prod_over_str_self_factor
+            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_owner_map[0]) * prod_over_str_neutral_factor
+            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_owner_map[self.my_id]) * prod_over_str_self_factor
             self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_enemy_map) * prod_over_str_enemy_factor
             
-            self.heuristic_map += numpy.multiply(self.production_map, self.is_neutral_map) * production_neutral_factor
-            self.heuristic_map += numpy.multiply(self.production_map, self.is_owned_map) * production_self_factor
+            self.heuristic_map += numpy.multiply(self.production_map, self.is_owner_map[0]) * production_neutral_factor
+            self.heuristic_map += numpy.multiply(self.production_map, self.is_owner_map[self.my_id]) * production_self_factor
             self.heuristic_map += numpy.multiply(self.production_map, self.is_enemy_map) * production_enemy_factor
         
             self.heuristic_map += numpy.multiply(self.strength_map, self.is_enemy_map) * enemy_strength_0_influence_factor
@@ -406,12 +396,12 @@ class GameMap:
                 
         else:
            
-            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_neutral_map) * late_game_prod_over_str_neutral_factor
-            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_owned_map) * late_game_prod_over_str_self_factor
+            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_owner_map[0]) * late_game_prod_over_str_neutral_factor
+            self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_owner_map[self.my_id]) * late_game_prod_over_str_self_factor
             self.heuristic_map += numpy.multiply(numpy.divide(self.production_map, numpy.maximum(self.strength_map, 1)), self.is_enemy_map) * late_game_prod_over_str_enemy_factor
             
-            self.heuristic_map += numpy.multiply(self.production_map, self.is_neutral_map) * late_game_production_neutral_factor
-            self.heuristic_map += numpy.multiply(self.production_map, self.is_owned_map) * late_game_production_self_factor
+            self.heuristic_map += numpy.multiply(self.production_map, self.is_owner_map[0]) * late_game_production_neutral_factor
+            self.heuristic_map += numpy.multiply(self.production_map, self.is_owner_map[self.my_id]) * late_game_production_self_factor
             self.heuristic_map += numpy.multiply(self.production_map, self.is_enemy_map) * late_game_production_enemy_factor
             
             self.heuristic_map += numpy.multiply(numpy.multiply(self.strength_map, self.is_enemy_map), late_game_enemy_strength_0_influence_factor)
@@ -423,27 +413,26 @@ class GameMap:
             self.heuristic_map += numpy.multiply(self.influence_enemy_territory_map[3], late_game_enemy_territory_3)  
 
     def update_recover_map(self):
-        max_distance = 9
+        max_distance = 15
         self.recover_map = numpy.zeros((max_distance + 1, self.width, self.height))
         self.recover_map[0] = numpy.divide(self.strength_map, numpy.maximum(self.production_map, 0.01))
         self.recover_map[0] = numpy.multiply(self.recover_map[0], self.is_neutral_map)
         
-        #self.recover_map_enemy_smooth = numpy.zeros((max_distance + 1, self.width, self.height))
+        self.recover_map_enemy_smooth = numpy.zeros((max_distance + 1, self.width, self.height))
         # Smooth out enemy strength to reduce volatility in heuristic. If we are losing, will this devalue those cells too much when we should be attacking them instead?
-        #enemy_total_strength = numpy.sum(numpy.multiply(self.strength_map, self.is_enemy_map))
-        #enemy_total_squares = numpy.sum(self.is_enemy_map)
-        #enemy_average_strength = enemy_total_strength / enemy_total_squares
+        enemy_total_strength = numpy.sum(numpy.multiply(self.strength_map, self.is_enemy_map))
+        enemy_total_squares = numpy.sum(self.is_enemy_map)
+        enemy_average_strength = enemy_total_strength / enemy_total_squares
         
-        #self.recover_map_enemy_smooth[0] = numpy.divide(numpy.multiply(self.is_enemy_map, enemy_average_strength), numpy.maximum(self.production_map, 0.1))
-        #self.recover_map_enemy_smooth[0] += self.recover_map[0]
+        self.recover_map_enemy_smooth[0] = numpy.divide(numpy.multiply(self.is_enemy_map, enemy_average_strength), numpy.maximum(self.production_map, 0.1))
+        self.recover_map_enemy_smooth[0] += self.recover_map[0]
         
         self.recover_map[0] += (self.is_owned_map + self.is_enemy_map) * 999
         
         self.recover_map_spread = numpy.zeros((max_distance+1, self.width, self.height))
-        dir_map = numpy.zeros((4, self.width, self.height))
         
         for distance in range(1, max_distance + 1):
-                     
+            dir_map = numpy.zeros((4, self.width, self.height))            
             dir_map[0] = roll_xy(self.recover_map[distance - 1], 0, 1)
             dir_map[1] = roll_xy(self.recover_map[distance - 1], 0, -1)
             dir_map[2] = roll_xy(self.recover_map[distance - 1], 1, 0)
@@ -451,85 +440,19 @@ class GameMap:
             
             self.recover_map[distance] = numpy.add(self.recover_map[distance - 1], numpy.amin(dir_map, 0))
             
-            #dir_map_smooth = numpy.zeros((4, self.width, self.height))
-            #dir_map_smooth[0] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, 1)
-            #dir_map_smooth[1] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, -1)
-            #dir_map_smooth[2] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 1, 0)
-            #dir_map_smooth[3] = roll_xy(self.recover_map_enemy_smooth[distance - 1], -1, 0)
+            dir_map_smooth = numpy.zeros((4, self.width, self.height))
+            dir_map_smooth[0] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, 1)
+            dir_map_smooth[1] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 0, -1)
+            dir_map_smooth[2] = roll_xy(self.recover_map_enemy_smooth[distance - 1], 1, 0)
+            dir_map_smooth[3] = roll_xy(self.recover_map_enemy_smooth[distance - 1], -1, 0)
             
-            #self.recover_map_enemy_smooth[distance] = numpy.add(self.recover_map_enemy_smooth[distance - 1], numpy.amin(dir_map_smooth, 0))
+            self.recover_map_enemy_smooth[distance] = numpy.add(self.recover_map_enemy_smooth[distance - 1], numpy.amin(dir_map_smooth, 0))
         
-        for d in range(1, max_distance + 1):
+        for d in range(2, max_distance + 1):
             self.recover_map[d] = self.recover_map[d] / d
-            #self.recover_map_enemy_smooth[d] = self.recover_map_enemy_smooth[d] / d      
-        for d in range(1, 6):
-            self.recover_map_spread[d] = spread_n(self.recover_map[d], self.width // 8)  
+            self.recover_map_enemy_smooth[d] = self.recover_map_enemy_smooth[d] / d      
+            self.recover_map_spread = spread_n(self.recover_map[d], self.width // 5)  
 
-
-    def create_dij_maps(self):
-        strength_map_1 = numpy.maximum(self.strength_map, 0.1)
-        prod_map_1 = numpy.maximum(self.production_map, 0.1)
-        def get_cost_str(cellnum):
-        
-            x = cellnum // self.height
-            y = cellnum % self.height
-            
-            # If we own the cell, the cost to move through it is equal to the production value of the cell
-            # I wonder if we can account for strength > 255 here by making it a barrier of sorts
-            #return max(self.strength_map[x, y], 0.01)  
-            return strength_map_1[x, y]
-            
-        def get_cost_prod(cellnum):
-        
-            x = cellnum // self.height
-            y = cellnum % self.height
-            
-            # If we own the cell, the cost to move through it is equal to the production value of the cell
-            # I wonder if we can account for strength > 255 here by making it a barrier of sorts
-            #return max(self.production_map[x, y], 0.01)
-            return prod_map_1[x, y]
-
-        dij_str_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
-        dij_prod_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
-        
-        for x in range(self.width):
-            for y in range(self.height):
-                coord = x * self.height + y
-
-                dij_str_costs[coord, ((x + 1) % self.width) * self.height + ((y + 0) % self.height)] = get_cost_str(((x + 1) % self.width) * self.height + ((y + 0) % self.height))
-                dij_str_costs[coord, ((x - 1) % self.width) * self.height + ((y + 0) % self.height)] = get_cost_str(((x - 1) % self.width) * self.height + ((y + 0) % self.height))
-                dij_str_costs[coord, ((x + 0) % self.width) * self.height + ((y + 1) % self.height)] = get_cost_str(((x + 0) % self.width) * self.height + ((y + 1) % self.height))
-                dij_str_costs[coord, ((x + 0) % self.width) * self.height + ((y - 1) % self.height)] = get_cost_str(((x + 0) % self.width) * self.height + ((y - 1) % self.height))
-
-                dij_prod_costs[coord, ((x + 1) % self.width) * self.height + ((y + 0) % self.height)] = get_cost_prod(((x + 1) % self.width) * self.height + ((y + 0) % self.height))
-                dij_prod_costs[coord, ((x - 1) % self.width) * self.height + ((y + 0) % self.height)] = get_cost_prod(((x - 1) % self.width) * self.height + ((y + 0) % self.height))
-                dij_prod_costs[coord, ((x + 0) % self.width) * self.height + ((y + 1) % self.height)] = get_cost_prod(((x + 0) % self.width) * self.height + ((y + 1) % self.height))
-                dij_prod_costs[coord, ((x + 0) % self.width) * self.height + ((y - 1) % self.height)] = get_cost_prod(((x + 0) % self.width) * self.height + ((y - 1) % self.height))
-
-        dij_strength_cost, dij_strength_route = scipy.sparse.csgraph.dijkstra(dij_str_costs, return_predecessors = True)      
-        dij_prod_cost, dij_prod_route = scipy.sparse.csgraph.dijkstra(dij_prod_costs, return_predecessors = True)          
-
-        self.dij_strength_distance_map = numpy.zeros((self.width, self.height, self.width, self.height))
-        self.dij_strength_route_map = numpy.zeros((self.width, self.height, self.width, self.height))
-        self.dij_prod_distance_map = numpy.zeros((self.width, self.height, self.width, self.height))
-        self.dij_prod_route_map = numpy.zeros((self.width, self.height, self.width, self.height))
-        
-        for x in range(self.width):
-            for y in range(self.height):
-                #self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
-                self.dij_strength_route_map[x, y, :, :] = dij_strength_route[x * self.height + y].reshape((self.width, self.height))
-                #self.dij_prod_distance_map[x, y, :, :] = dij_prod_cost[x * self.height + y].reshape((self.width, self.height))    
-                self.dij_prod_route_map[x, y, :, :] = dij_prod_route[x * self.height + y].reshape((self.width, self.height))        
-                
-    def create_smoothed_value_distance_map(self):
-        self.smoothed_value_distance_map = numpy.zeros((self.width, self.height))
-        for x in range(self.width):
-            for y in range(self.height):
-                smoothed_value = numpy.divide(self.production_map, self.dij_strength_distance_map[x, y])
-                smoothed_value[x, y] = 0
-                self.smoothed_value_distance_map = numpy.sum(smoothed_value)
-
-        
          
     def get_distance(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -579,23 +502,6 @@ class GameMap:
         
         send_string(' '.join(str(square.x) + ' ' + str(square.y) + ' ' + str(translate_cardinal(square.move)) for square in move_list))
 
-    def new_get_moves(self):
-        
-        turns_to_recover = numpy.divide(numpy.maximum(self.strength_map, 1), self.production_map)
-        
-        for square in itertools.chain.from_iterable(self.squares):
-            if square.owner == self.my_id:
-                if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2 and square.strength > (square.production * buildup_multiplier) and (square.move == -1 or square.move == STILL):
-                    turns_to_capture = numpy.divide(numpy.maximum(self.strength_map - self.strength_map[square.x, square.y], 0), numpy.maximum(self.production_map, 0.1))
-                    production_value = numpy.multiply(self.production_map, (1 - self.is_owned_map))
-                    value_map = numpy.divide(production_value, self.distance_map_no_decay ** 2 + turns_to_capture + turns_to_recover)
-                    value_map += numpy.multiply(self.smoothed_value_distance_map, self.is_neutral_map - self.combat_zone_map)
-                    tx, ty = numpy.unravel_index(value_map.argmax(), (self.width, self.height))
-                    square.move_to_target(self.squares[tx, ty], True)
-                    
-                    
-        
-        
     def get_best_moves(self):
         # Instead of each cell acting independently, look at the board as a whole and make squares move based on that.
 
@@ -605,7 +511,7 @@ class GameMap:
         for square in itertools.chain.from_iterable(self.squares):
             if self.border_map[square.x, square.y]:
                 if self.influence_enemy_territory_map[3, square.x, square.y] == 0:
-                    production_squares.append((square, self.recover_map[4, square.x, square.y]))
+                    production_squares.append((square, self.recover_map_enemy_smooth[4, square.x, square.y]))
                 else: 
                     if square.owner == 0 and square.production == 1 and square.strength > 4:
                         continue
@@ -642,20 +548,17 @@ class GameMap:
                 cells_to_consider_moving.append(square)
 
         # Simple logic for now:
-        
         for square in cells_to_consider_moving:
-            
             if square.is_border() == True:
                 # Can we attack a bordering cell?
                 targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
                 if len(targets) > 0:
                     targets.sort(key = lambda x: heuristic(x), reverse = True)
                     if heuristic(targets[0]) < 0 or self.recover_map[5, targets[0].x, targets[0].y] > threshold:
-                        target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y] * 2, self.border_map)
+                        target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map[square.x, square.y] * 2, self.border_map)
                         target_map += (self.is_owned_map + self.is_enemy_map) * 999
                         tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                        #square.move_to_target(self.squares[tx, ty], True)
-                        self.move_square_to_target(square, self.squares[tx, ty])
+                        square.move_to_target(self.squares[tx, ty], True)
 
                     else:
                         square.move_to_target(targets[0], False)
@@ -665,11 +568,10 @@ class GameMap:
                     #self.find_nearest_enemy_direction(square)
                     #self.find_nearest_non_owned_border(square)
                     #self.go_to_border(square)
-                    target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y], self.border_map)
+                    target_map = numpy.multiply(self.recover_map_spread + self.distance_map[square.x, square.y], self.border_map)
                     target_map += (self.is_owned_map + self.is_enemy_map) * 999
                     tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                    self.move_square_to_target(square, self.squares[tx, ty])
-                    #square.move_to_target(self.squares[tx, ty], True)
+                    square.move_to_target(self.squares[tx, ty], True)
         
         # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.
        
@@ -722,11 +624,9 @@ class GameMap:
                     moving_cells.sort(key = lambda x: x.strength, reverse = True)
                     for square in moving_cells:
                         if cells_out == 1:
-                            #square.move_to_target(target, False)
-                            self.move_square_to_target(square, target)
+                            square.move_to_target(target, False)
                         else:
-                            self.move_square_to_target(square, target)
-                            #square.move_to_target(target, True)
+                            square.move_to_target(target, True)
                         needed_strength_from_movers -= square.strength
                         if needed_strength_from_movers < 0:
                             break
@@ -840,7 +740,6 @@ class GameMap:
 
         
         # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
-        
         cells_to_consider_moving = []
         for square in itertools.chain.from_iterable(self.squares):
             # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
@@ -854,8 +753,7 @@ class GameMap:
                 targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
                 if len(targets) > 0:
                     targets.sort(key = lambda x: heuristic(x), reverse = True)
-                    self.move_square_to_target(square, targets[0])
-                    #square.move_to_target(targets[0], False)
+                    square.move_to_target(targets[0], False)
             elif square.strength > (square.production * late_game_buildup_multiplier):
                 #self.go_to_border(square)
                 if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
@@ -864,39 +762,6 @@ class GameMap:
                 #self.go_to_border(square)
         
         # Any cells which are not moving now don't have a reason to move and can be used to prevent collisions.        
-
-    def get_xy_from_index(self, num):
-        return (num // self.height, num % self.height)
-        
-    def move_square_to_target(self, square, target):
-        # Attempts to move the square to the designated target
-        # If all neighbors are friendly, then we will use dijkstra_prod_map to move
-        # If not all neighbors are friendly, we will use dijkstra_strength_map to move
-        # If Dijkstra strength tries to move into an enemy square, default back to the old move_to_target function.
-        # If we are attempting to move into a square with > strength than what we have, just stay still instead.
-        
-        # Check if we are part of border:
-        if not self.inner_border_map[square.x, square.y]:
-            # We're surrounded by friendlies, move using dij path
-            tx, ty = self.get_xy_from_index(self.dij_prod_route_map[target.x, target.y, square.x, square.y])
-            # Cheat and use the old move_to_target to handle collision routing
-            square.move_to_target(self.squares[tx, ty], True)
-        else:
-            # Try to move using dij_strength
-            tx, ty = self.get_xy_from_index(self.dij_strength_route_map[target.x, target.y, square.x, square.y])
-            adj_target = self.squares[tx, ty]
-            if adj_target.owner == self.my_id:
-                square.move_to_target(adj_target, True)
-            elif square.strength > adj_target.strength:
-                square.move_to_target(adj_target, False)
-            else:
-                return
-            
-            
-            
-            
-                
-        
         
 ################
 # Square class #        
@@ -1285,6 +1150,7 @@ def heuristic(cell, source = None):
         
     cell_value = 0
     
+    return game_map.heuristic_map[cell.x, cell.y]
     cell_value += production_square_influence_factor * cell.production / max(cell.strength, 1)
     cell_value += game_map.influence_production_map[cell.x, cell.y] * production_influence_factor
     cell_value += game_map.influence_prod_over_str_map[cell.x, cell.y] * prod_over_str_influence_factor
@@ -1302,8 +1168,8 @@ def first_turns_heuristic():
     border_squares = []
     for square in game_map:
         if game_map.border_map[square.x, square.y]:
-            border_squares.append((square, game_map.recover_map[game_map.early_game_squares_out_search, square.x, square.y]))
-            if game_map.influence_enemy_territory_map[4, square.x, square.y] > 0:
+            border_squares.append((square, game_map.recover_map[11, square.x, square.y]))
+            if game_map.influence_enemy_territory_map[3, square.x, square.y] > 0:
                 game_map.phase = 1
     border_squares.sort(key = lambda x: x[1])
     
@@ -1320,35 +1186,44 @@ def first_turns_heuristic():
     for border in border_squares:
         find_cell = False
         if border[1] <= threshold:
-            find_cell = game_map.attack_cell(border[0], 5)
+            find_cell = game_map.attack_cell(border[0], 7)
         if find_cell: 
             border_squares.remove(border)
-    
+
+    for border in border_squares:
+        find_cell = False
+        if border[1] <= threshold:
+            find_cell = game_map.attack_cell(border[0], 15)
+        if find_cell: 
+            border_squares.remove(border)
+            
     cells_to_consider_moving = []
     for square in game_map:
         # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
         if square.owner == game_map.my_id and (square.move == -1):
             cells_to_consider_moving.append(square)
     
-    for square in cells_to_consider_moving:
-        if square.strength > (square.production * early_game_buildup_multiplier):
+    #for square in cells_to_consider_moving:
+    #    if square.strength > (square.production * early_game_buildup_multiplier):
             #if not square.is_border():
             # Move to the highest valued cell
             #    square.move_to_target(border_squares[0][0], True)
             #else:
-            if game_map.get_distance(square, border_squares[0][0]) > 2:
-                #square.move_to_target(border_squares[0][0], True)
-                game_map.move_square_to_target(square, border_squares[0][0])
+    #        if game_map.get_distance(square, border_squares[0][0]) > 2:
+    #            square.move_to_target(border_squares[0][0], True)
 
 #############
 # Game Loop #
 #############
 def game_loop():
+    
     game_map.get_frame()
     #start = time.time()
     game_map.update()
     #end = time.time()
     #logging.debug("update Frame: " + str(game_map.frame) + " : " + str(end - start))
+    #game_map.create_production_influence_map()
+    #logging.debug("\nFrame: " + str(game_map.frame))
     # Have each individual square decide on their own movement
 
     if game_map.phase == 0:
@@ -1366,6 +1241,7 @@ def game_loop():
         game_map.get_best_moves_late_game()
         #end = time.time()
         #logging.debug("phase 2 Frame: " + str(game_map.frame) + " : " + str(end - start))
+        
     game_map.send_frame()
 
 

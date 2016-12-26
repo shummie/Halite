@@ -20,7 +20,7 @@ import scipy.sparse
 # Variables #
 #############
 
-botname = "shummie v25"
+botname = "shummie v26"
 
 production_decay = 0.7
 production_influence_max_distance = 12
@@ -116,7 +116,7 @@ class GameMap:
         self.create_dij_maps()
         #end = time.time()
         #logging.debug("createstrength Frame: " + str(self.frame) + " : " + str(end - start))
-        #self.create_smoothed_value_distance_map()
+        self.create_smoothed_value_distance_map()
 
         
         self.get_configs()
@@ -516,7 +516,7 @@ class GameMap:
         
         for x in range(self.width):
             for y in range(self.height):
-                #self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
+                self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
                 self.dij_strength_route_map[x, y, :, :] = dij_strength_route[x * self.height + y].reshape((self.width, self.height))
                 #self.dij_prod_distance_map[x, y, :, :] = dij_prod_cost[x * self.height + y].reshape((self.width, self.height))    
                 self.dij_prod_route_map[x, y, :, :] = dij_prod_route[x * self.height + y].reshape((self.width, self.height))        
@@ -525,9 +525,9 @@ class GameMap:
         self.smoothed_value_distance_map = numpy.zeros((self.width, self.height))
         for x in range(self.width):
             for y in range(self.height):
-                smoothed_value = numpy.divide(self.production_map, self.dij_strength_distance_map[x, y])
+                smoothed_value = numpy.divide(self.dij_strength_distance_map[x, y], self.production_map)
                 smoothed_value[x, y] = 0
-                self.smoothed_value_distance_map = numpy.sum(smoothed_value)
+                self.smoothed_value_distance_map[x, y] = numpy.sum(smoothed_value)
 
         
          
@@ -617,14 +617,6 @@ class GameMap:
         all_targets.sort(key = lambda x: x[1], reverse = True)
         best_targets = all_targets[0:int(len(all_targets) * border_target_percentile)]
 
-        if len(production_squares) > 0:
-            threshold = production_squares[0][1] / mid_game_value_threshold
-        for border in production_squares:
-            find_cell = False
-            if border[1] >= threshold:
-                find_cell = self.attack_cell(border[0], 4)
-            if find_cell: 
-                production_squares.remove(border)
         # For each border cell, depending on either the state of the game or the border itself, different valuation algorithms should occur.
         
         # Ok now that we have a list of best targets, see if we can capture any of these immediately.
@@ -634,6 +626,16 @@ class GameMap:
             if success_attack:
                 best_targets.remove(target)
 
+        if len(production_squares) > 0:
+            threshold = production_squares[0][1] / mid_game_value_threshold
+        for border in production_squares:
+            find_cell = False
+            if border[1] >= threshold:
+                find_cell = self.attack_cell(border[0], 3)
+            if find_cell: 
+                production_squares.remove(border)
+                
+                
         # Now, there are some cells that haven't moved yet, but we might not want to move all of them. 
         cells_to_consider_moving = []
         for square in itertools.chain.from_iterable(self.squares):
@@ -645,28 +647,15 @@ class GameMap:
         
         for square in cells_to_consider_moving:
             
-            if square.is_border() == True:
-                # Can we attack a bordering cell?
-                targets = [n for n in square.neighbors() if (n.owner != self.my_id and n.strength < square.strength)]
-                if len(targets) > 0:
-                    targets.sort(key = lambda x: heuristic(x), reverse = True)
-                    if heuristic(targets[0]) < 0 or self.recover_map[5, targets[0].x, targets[0].y] > threshold:
-                        target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y] * 2, self.border_map)
-                        target_map += (self.is_owned_map + self.is_enemy_map) * 999
-                        tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
-                        #square.move_to_target(self.squares[tx, ty], True)
-                        self.move_square_to_target(square, self.squares[tx, ty])
-
-                    else:
-                        square.move_to_target(targets[0], False)
-            elif square.strength > (square.production * buildup_multiplier):
+            if square.strength > (square.production * buildup_multiplier):
                 if len(square.moving_here) == 0 and (square.x + square.y) % 2 == self.frame % 2:
                     #self.go_to_border(square)
                     #self.find_nearest_enemy_direction(square)
                     #self.find_nearest_non_owned_border(square)
                     #self.go_to_border(square)
-                    target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y], self.border_map)
-                    target_map += (self.is_owned_map + self.is_enemy_map) * 999
+                    #target_map = numpy.multiply(self.recover_map_spread[5] + self.distance_map_no_decay[square.x, square.y] * 2, self.border_map)
+                    target_map = self.smoothed_value_distance_map + self.distance_map_no_decay[square.x, square.y] * 2
+                    target_map += (self.is_owned_map) * 999
                     tx, ty = numpy.unravel_index(target_map.argmin(), (self.width, self.height))
                     self.move_square_to_target(square, self.squares[tx, ty])
                     #square.move_to_target(self.squares[tx, ty], True)
@@ -1298,6 +1287,46 @@ def heuristic(cell, source = None):
 
     return cell_value
 
+def new_first_turns_moves():
+    border_squares = []
+    for square in game_map:
+        if game_map.border_map[square.x, square.y]:
+            border_squares.append((square, game_map.smoothed_value_distance_map[square.x, square.y]))
+            if game_map.influence_enemy_territory_map[4, square.x, square.y] > 0:
+                game_map.phase = 1
+    border_squares.sort(key = lambda x: x[1])
+
+    threshold = border_squares[0][1] / early_game_value_threshold
+
+    for border in border_squares:
+        find_cell = False
+        if border[1] <= threshold:
+            find_cell = game_map.attack_cell(border[0], 3)
+        if find_cell: 
+            border_squares.remove(border)
+
+    for border in border_squares:
+        find_cell = False
+        if border[1] <= threshold:
+            find_cell = game_map.attack_cell(border[0], 5)
+        if find_cell: 
+            border_squares.remove(border)    
+
+
+    cells_to_consider_moving = []
+    for square in game_map:
+        # Do we risk undoing a multi-move capture if we move a piece that's "STILL"?
+        if square.owner == game_map.my_id and (square.move == -1):
+            cells_to_consider_moving.append(square)
+    
+    for square in cells_to_consider_moving:
+        if square.strength > (square.production * early_game_buildup_multiplier):
+            target_map = game_map.smoothed_value_distance_map[square.x, square.y]
+            target_map += (1 - game_map.border_map) * 999
+            tx, ty = numpy.unravel_index(target_map.argmin(), (game_map.width, game_map.height))
+            game_map.move_square_to_target(square, game_map.squares[tx, ty])
+            
+            
 def first_turns_heuristic():
     border_squares = []
     for square in game_map:
@@ -1332,13 +1361,17 @@ def first_turns_heuristic():
     
     for square in cells_to_consider_moving:
         if square.strength > (square.production * early_game_buildup_multiplier):
+            target_map = numpy.copy(game_map.recover_map[game_map.early_game_squares_out_search])
+            target_map += (1 - game_map.border_map) * 999
+            tx, ty = numpy.unravel_index(target_map.argmin(), (game_map.width, game_map.height))
+            game_map.move_square_to_target(square, game_map.squares[tx, ty])
             #if not square.is_border():
             # Move to the highest valued cell
             #    square.move_to_target(border_squares[0][0], True)
             #else:
-            if game_map.get_distance(square, border_squares[0][0]) > 2:
+            #if game_map.get_distance(square, border_squares[0][0]) > 2:
                 #square.move_to_target(border_squares[0][0], True)
-                game_map.move_square_to_target(square, border_squares[0][0])
+            #    game_map.move_square_to_target(square, border_squares[0][0])
 
 #############
 # Game Loop #
@@ -1353,6 +1386,7 @@ def game_loop():
 
     if game_map.phase == 0:
         #start = time.time()
+        #new_first_turns_moves()
         first_turns_heuristic()
         #end = time.time()
         #logging.debug("phase 0 Frame: " + str(game_map.frame) + " : " + str(end - start))

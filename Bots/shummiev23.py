@@ -20,7 +20,7 @@ import scipy.sparse
 # Variables #
 #############
 
-botname = "shummie v25"
+botname = "shummie v23"
 
 production_decay = 0.7
 production_influence_max_distance = 12
@@ -467,8 +467,6 @@ class GameMap:
 
 
     def create_dij_maps(self):
-        strength_map_1 = numpy.maximum(self.strength_map, 0.1)
-        prod_map_1 = numpy.maximum(self.production_map, 0.1)
         def get_cost_str(cellnum):
         
             x = cellnum // self.height
@@ -476,8 +474,7 @@ class GameMap:
             
             # If we own the cell, the cost to move through it is equal to the production value of the cell
             # I wonder if we can account for strength > 255 here by making it a barrier of sorts
-            #return max(self.strength_map[x, y], 0.01)  
-            return strength_map_1[x, y]
+            return max(self.strength_map[x, y], 0.01)  
             
         def get_cost_prod(cellnum):
         
@@ -486,8 +483,7 @@ class GameMap:
             
             # If we own the cell, the cost to move through it is equal to the production value of the cell
             # I wonder if we can account for strength > 255 here by making it a barrier of sorts
-            #return max(self.production_map[x, y], 0.01)
-            return prod_map_1[x, y]
+            return max(self.production_map[x, y], 0.01)              
 
         dij_str_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
         dij_prod_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
@@ -516,9 +512,9 @@ class GameMap:
         
         for x in range(self.width):
             for y in range(self.height):
-                #self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
+                self.dij_strength_distance_map[x, y, :, :] = dij_strength_cost[x * self.height + y].reshape((self.width, self.height))
                 self.dij_strength_route_map[x, y, :, :] = dij_strength_route[x * self.height + y].reshape((self.width, self.height))
-                #self.dij_prod_distance_map[x, y, :, :] = dij_prod_cost[x * self.height + y].reshape((self.width, self.height))    
+                self.dij_prod_distance_map[x, y, :, :] = dij_prod_cost[x * self.height + y].reshape((self.width, self.height))    
                 self.dij_prod_route_map[x, y, :, :] = dij_prod_route[x * self.height + y].reshape((self.width, self.height))        
                 
     def create_smoothed_value_distance_map(self):
@@ -1347,6 +1343,7 @@ def game_loop():
     game_map.get_frame()
     #start = time.time()
     game_map.update()
+
     #end = time.time()
     #logging.debug("update Frame: " + str(game_map.frame) + " : " + str(end - start))
     # Have each individual square decide on their own movement

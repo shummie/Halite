@@ -1,6 +1,48 @@
 History
 --------
-Version 14 - ?? / ??? - December 12, 2016
+Version 26 - ?? / ??? - mu:, sigma: - December 25, 2016
+* Made a minor tweak to allow movement for border squares.
+Version 25 - ?? / 1164 - mu:  , sigma:   - December 24, 2016
+* I should test my bot before submitting. Fixed some bugs from the prior version.
+
+Version 24 - 1136 / 1164 - mu: 10.05, sigma: 1.3 - December 24, 2016
+* Removed some calcs from dij calc. Let's see if this stops the timeout issues.
+
+Version 23 - 25 / 1164 - mu: 47.45, sigma: 0.73 - December 24, 2016
+* This is getting stupid. Removed is_owner_map, changed some recover_map_smooth stuff. I hope nothing breaks. I supposedly fixed a broken as well.
+
+Version 22 - 149 / 1162 - mu: 41.91, sigma: 1.2 - December 24, 2016
+* Tweak some more things. Is it the init Dijkstra's that's causing the problems??
+
+Version 21 - 100 / 1162 - mu: 43.86, sigma: 1.11 - December 24, 2016
+* Reduce recover map to 9 and remove recover_map_enemy_smooth to try to alleviate timeout errors
+
+Version 20 - 302 / 1162 - mu: 38.56, sigma: 1.5 - December 24, 2016
+* Fix time-out errors from updating distance_maps that are not currently being used. Need to fix this if we want to use them in the future.
+
+Version 19 - 197 / 1162 - mu: 39.57, sigma: 0.86 December 23, 2016
+* Incorporate Dijkstra's Algorithm for pathfinding
+* A lot more opportunities to take advantage of this going forward.
+
+Version 18 - 23 / 1162 - mu: 47.38, sigma: 0.73 - December 23, 2016
+* Minor tweaks to parameters which seem to perform slightly better in testing
+
+Version 17 - 21 / 1161 - December 22, 2016
+* Reduce recover_map range to 15. 50 was a bit excessive and resulting in timeouts.
+
+Version 16 - 166 / 1155 - December 22, 2016
+* Use recover_map instead of future_value_map
+* Try to optimize attack patterns by having squares depending on parity
+* Try to avoid taking cells that won't pay itself off (still need to fix for late game)
+* Some hacky logic to have border cells move to more valuable border cells if they aren't valuable enough to capture
+
+Version 15 - 20 / 1155 - December 20, 2016
+* Tried many many major tweaks but nothing works.
+* Rewrote the move_to_target function which seems to perform much better
+* Minor code clean up
+* Rewrote the find nearest border function
+
+Version 14 - 30 / 1137 - December 12, 2016
 * Change how far our the early game tries to look based on map size and player count
 * Slightly tweak the find_nearest_non_npc_enemy_direction function. There is some slowdown when we're winning but we don't want to timeout. How to fix?
 
@@ -65,22 +107,3 @@ Version 2.0 - 74 / 848 - December 2, 2016
 
 Version 1.0 - 136 / 828 - December 1, 2016
 * First attempt at something that's better than the basic tutorial bots
-
-
-name            last_seen               rank    skill           mu              sigma           ngames  active
-v7-11-9-5       07.12.2016 06:55:35     1       26.997977       29.243923       0.748649        119 1
-v7-11-9-4       07.12.2016 06:50:59     2       25.341659       27.599776       0.752706        107 1
-v6      07.12.2016 06:55:35     3       25.225261       27.450274       0.741671        103     1
-v7-11-9-3       07.12.2016 06:55:58     4       25.205160       27.429473       0.741438        94  1
-v5      07.12.2016 06:49:04     5       24.983046       27.192066       0.736340        99      1
-v7-11-6 07.12.2016 06:48:17     6       24.856111       27.085475       0.743121        92      1
-v7-11-9-1       07.12.2016 06:50:46     7       24.603269       26.799098       0.731943        98  1
-v7-11-5 07.12.2016 06:46:44     8       24.392356       26.635722       0.747789        105     1
-v7-11-9-2       07.12.2016 06:37:26     9       24.098350       26.312141       0.737931        105 1
-v7-11-9 07.12.2016 06:50:59     10      23.494119       25.733924       0.746601        98      1
-v7-11-4 07.12.2016 06:57:58     11      22.401090       24.626962       0.741958        103     1
-v7-11-7 07.12.2016 06:55:35     12      22.288098       24.453165       0.721689        96      1
-v7-11-3 07.12.2016 06:26:11     13      21.696648       23.928488       0.743946        92      1
-v7-11   07.12.2016 06:57:58     14      20.744205       22.961294       0.739030        112     1
-v7-11-2 07.12.2016 06:49:04     15      18.375001       20.610889       0.745296        116     1
-v7-10-3 07.12.2016 06:57:58     16      15.969250       18.265493       0.765414        174     1
