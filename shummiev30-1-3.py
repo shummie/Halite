@@ -347,7 +347,7 @@ class Game:
 #        combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
         
         for square in combat_squares:
-            if (square.strength > square.production * self.buildup_multiplier[square.x, square.y]) and ((square.x + square.y) % 2 == self.frame % 2):
+            if (square.strength > square.production * self.buildup_multiplier[square.x, square.y]) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1:
 #                self.move_towards_map(square, self.distance_from_combat_zone)
                 self.move_towards_map(square, combat_distance_matrix)
             else:
@@ -370,6 +370,7 @@ class Game:
         # Does not try to attack cells that are in combat zones.
         potential_targets_indices = np.transpose(np.nonzero(self.border_map - self.combat_zone_map))
         potential_targets = [(self.squares[c[0], c[1]], self.recover_wtd_map[c[0], c[1]], 1) for c in potential_targets_indices]
+
         potential_targets = []
         for c in potential_targets_indices:
             target = self.squares[c[0], c[1]]
@@ -381,7 +382,7 @@ class Game:
         
         if len(potential_targets) == 0: 
             return
-            
+        potential_targets.sort(key = lambda x: x[0].strength)    
         potential_targets.sort(key = lambda x: x[1] + x[2])
         
 #        best_target_value = potential_targets[0][1]
@@ -405,7 +406,7 @@ class Game:
         idle_squares.sort(key = lambda sq: self.distance_from_border[sq.x, sq.y])
         
         for square in idle_squares:
-            if square.strength > square.production * self.buildup_multiplier[square.x, square.y]:
+            if square.strength > square.production * self.buildup_multiplier[square.x, square.y] and square.move == -1:
                 if self.percent_owned > 0.75:
                     self.move_towards_map(square, self.distance_from_border)
                 else:
@@ -509,16 +510,15 @@ class Game:
             square.move = -1
             return
         
-        if square.move != -1 and square.move != STILL:
+        if square.move != -1:
             if square.target != None:
                 square.target.moving_here.remove(square)
+                square.target = None
         
         square.move = direction
         if direction != STILL:
             square.target = square.neighbors[direction]
             square.target.moving_here.append(square)
-        elif direction == STILL:
-            square.target = None
             
     def move_square_to_target(self, source, destination, through_friendly):
         # Get the distance matrix that we will use to determine movement.
@@ -559,27 +559,34 @@ class Game:
             if target.owner == self.my_id:
                 # Yes. We can, but is the cell staying still? If not, then we can't do anything
                 if target.move == STILL or target.move == -1:
+                    future_strength = source.strength
+                    for sq in target.moving_here:
+                        future_strength += sq.strength
+                    if future_strength < 255 + strength_buffer:
                     # Simulate the move. UNDO if it doesn't work
-                    self.make_move(source, direction)
+                    
                     # Ok, let's move the target square.
                     # Keep it simple this time. Check all neighbors.
                     # Only move for now to own squares
-                    n_directions = [NORTH, EAST, SOUTH, WEST]
-                    random.shuffle(n_directions)
-                    for n_d in n_directions:
-                        n_t = target.neighbors[n_d]
-                        if n_t.owner == self.my_id:
-                            # Can we safely move into this square?
-                            future_n_t_strength = 0
-                            if n_t.move == -1 or n_t.move == STILL:
-                                future_n_t_strength += n_t.strength + n_t.production
-                            for n_t_moving in n_t.moving_here:
-                                future_n_t_strength += n_t_moving.strength
-                            if future_n_t_strength + target.strength <= 255 + strength_buffer:
-                                self.make_move(target, n_d)
-                                return True
-                    self.make_move(source, -1)
-        
+                        n_directions = list(range(4))
+                        random.shuffle(n_directions)
+                        for n_d in n_directions:
+                            n_t = target.neighbors[n_d]
+                            if n_t.owner == self.my_id:
+                                # Can we safely move into this square?
+                                future_n_t_strength = target.strength
+                                if n_t.move == -1 or n_t.move == STILL:
+                                    future_n_t_strength += n_t.strength + n_t.production
+                                for n_t_moving in n_t.moving_here:
+                                    future_n_t_strength += n_t_moving.strength
+                                if future_n_t_strength <= 255 + strength_buffer:
+                                    self.make_move(source, direction)
+                                    success = self.move_square_to_target(target, n_t, True)
+                                    if not success:
+                                        self.make_move(source, -1)
+                                    else:
+                                        return True
+
         # Nothing to do left
         return False
  
@@ -707,32 +714,39 @@ class Game:
                 
         for (direction, target) in path_choices:
             # Ok, can we move the cell that we are moving to:
-            # Simulate the move. UNDO if it doesn't work
-            self.make_move(source, direction)
+            
             if target.owner == self.my_id:
                 # Yes. We can, but is the cell staying still? If not, then we can't do anything
                 if target.move == STILL or target.move == -1:
+                    future_strength = source.strength
+                    for sq in target.moving_here:
+                        future_strength += sq.strength
+                    if future_strength < 255 + strength_buffer:
+                    # Simulate the move. UNDO if it doesn't work
+                    
                     # Ok, let's move the target square.
                     # Keep it simple this time. Check all neighbors.
                     # Only move for now to own squares
-                    n_directions = [NORTH, EAST, SOUTH, WEST]
-                    random.shuffle(n_directions)
-                    for n_d in n_directions:
-                        n_t = target.neighbors[n_d]
-                        if n_t.owner == self.my_id:
-                            # Can we safely move into this square?
-                            future_n_t_strength = 0
-                            if n_t.move == -1 or n_t.move == STILL:
-                                future_n_t_strength += n_t.strength + n_t.production
-                            for n_t_moving in n_t.moving_here:
-                                future_n_t_strength += n_t_moving.strength
-                            if future_n_t_strength + target.strength <= 255 + strength_buffer:
-                                self.make_move(target, n_d)
-                                return True
-            self.make_move(source, -1)
-        
+                        n_directions = [NORTH, EAST, SOUTH, WEST]
+                        random.shuffle(n_directions)
+                        for n_d in n_directions:
+                            n_t = target.neighbors[n_d]
+                            if n_t.owner == self.my_id:
+                                # Can we safely move into this square?
+                                future_n_t_strength = 0
+                                if n_t.move == -1 or n_t.move == STILL:
+                                    future_n_t_strength += n_t.strength + n_t.production
+                                for n_t_moving in n_t.moving_here:
+                                    future_n_t_strength += n_t_moving.strength
+                                if future_n_t_strength + target.strength <= 255 + strength_buffer:
+                                    self.make_move(source, direction)
+                                    
+                                    self.make_move(target, n_d)
+                                    return True
+
         # Nothing to do left
-        return False               
+        return False
+            
                 
                 
             
