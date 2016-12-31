@@ -14,10 +14,12 @@ import time
 #==============================================================================
 # Variables
 #==============================================================================
-botname = "shummie v26"
+botname = "shummie v27-1-1"
 
-buildup_multiplier = 6
+buildup_multiplier = 4 # TODO: Can we vary this by mapsize / state of the board?
 strength_buffer = 0
+pre_combat_threshold = 2
+combat_radius = 6
 
 #==============================================================================
 # Game Class
@@ -155,6 +157,8 @@ class Game:
         self.update_distance_maps()
         self.update_border_maps()
         
+        self.update_enemy_maps()
+        
         self.update_recover_maps()
        
     def update_calc_maps(self):
@@ -183,8 +187,6 @@ class Game:
             self.distance_from_enemy[self.is_enemy_map == 1] = 999
         else:
             self.distance_from_enemy = np.ones((self.width, self.height)) * 999
-
-        
         
     def update_border_maps(self):
         self.border_map = np.zeros((self.width, self.height))
@@ -204,6 +206,13 @@ class Game:
             self.distance_from_combat_zone += (self.is_enemy_map + self.is_neutral_map - self.combat_zone_map) * 999
         else:
             self.distance_from_combat_zone = np.ones((self.width, self.height)) * 999
+
+    def update_enemy_maps(self):
+        self.enemy_strength_map = np.zeros((5, self.width, self.height))
+        self.enemy_strength_map[0] = self.strength_map * self.is_enemy_map
+    
+        for x in range(len(self.enemy_strength_map)):
+            self.enemy_strength_map[x] = spread_n(self.enemy_strength_map[0], x)
         
     def update_recover_maps(self):
         max_distance = self.width // 2
@@ -245,7 +254,6 @@ class Game:
         
     def get_pre_combat_production(self):
         # In the event we are trying to fight in a very high production zone, reroute some attacking power to expand in this area.
-        pre_combat_threshold = 2
         potential_targets_indices = np.transpose(np.nonzero(self.border_map - self.combat_zone_map))
         potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices if (self.recover_wtd_map[c[0], c[1]] < pre_combat_threshold)]
         if len(potential_targets) == 0: 
@@ -266,18 +274,28 @@ class Game:
         potential_targets_indices = np.transpose(np.nonzero(self.combat_zone_map))
         potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices]
         potential_targets.sort(key = lambda x: self.distance_from_enemy[x.x, x.y])
+        #potential_targets.sort(key = lambda x: self.enemy_strength_map[2, x.x, x.y], reverse = True)
+        
+        # TODO: Should sort by amount of overkill damage possible.
 
         for square in potential_targets:
             self.attack_cell(square, 1)
         
         # Get a list of all squares within 5 spaces of a combat zone.
-        combat_radius = 5
+        # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?
+        combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
+        combat_distance_matrix = self.friendly_flood_fill_multiple_sources(combat_zone_squares, combat_radius+4)
+        combat_distance_matrix[combat_distance_matrix == -1] = 0
+        combat_distance_matrix[combat_distance_matrix == 1] = 0
+        combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
+        
+        
         combat_squares_indices = np.transpose(np.nonzero((self.distance_from_combat_zone <= combat_radius) * (self.move_map == -1)))
         combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
         
         for square in combat_squares:
-            if (square.strength > square.production * buildup_multiplier) and ((square.x + square.y) % 2 == self.frame % 2):
-                self.move_towards_map(square, self.distance_from_combat_zone)
+            if (square.strength > square.production * buildup_multiplier) and ((square.x + square.y) % 2 == self.frame % 2) and (square.move == -1):
+                self.move_towards_map(square, combat_distance_matrix)
             else:
                 self.make_move(square, STILL)
 
@@ -303,6 +321,8 @@ class Game:
         
         best_target_value = self.recover_wtd_map[potential_targets[0].x, potential_targets[0].y]
         # anything with X of the best_value target should be considered. Let's set this to 4 right now.
+        # TODO, we should slowly iterate upwards.
+        # TODO Should we cap which cells we try to look at?
         while len(potential_targets) > 0 and self.recover_wtd_map[potential_targets[0].x, potential_targets[0].y] <= (best_target_value + 8000):
             target = potential_targets.pop(0)
             self.attack_cell(target, 4)
@@ -475,14 +495,14 @@ class Game:
                     # UNDO THE MOVE
                     self.make_move(source, -1)
                 # Is there anywhere else we can move this cell?
-                if path_choices[0][1].moving_here != []:
-                    for secondary_target in path_choices[0][1].moving_here:
-                        # Simulate the move
-                        self.make_move(source, path_choices[0][0])
-                        success = self.move_square_to_target(path_choices[0][1], secondary_target.target, through_friendly)
-                        if success:
-                            return True
-                        self.make_move(source, -1)
+#                if path_choices[0][1].moving_here != []:
+#                    for secondary_target in path_choices[0][1].moving_here:
+#                        # Simulate the move
+#                        self.make_move(source, path_choices[0][0])
+#                        success = self.move_square_to_target(path_choices[0][1], secondary_target.target, through_friendly)
+#                        if success:
+#                            return True
+#                        self.make_move(source, -1)
                 # Ok, can we just move the destination to a different square?
                 neighbor_targets = []
                 for n in path_choices[0][1].neighbors:
@@ -524,14 +544,14 @@ class Game:
                         # UNDO THE MOVE
                         self.make_move(source, -1)
                     # Is there anywhere else we can move this cell?
-                    if path_choices[1][1].moving_here != []:
-                        for secondary_target in path_choices[0][1].moving_here:
-                            # Simulate the move
-                            self.make_move(source, path_choices[1][0])
-                            success = self.move_square_to_target(path_choices[1][1], secondary_target.target, through_friendly)
-                            if success:
-                                return True
-                            self.make_move(source, -1)
+#                    if path_choices[1][1].moving_here != []:
+#                        for secondary_target in path_choices[0][1].moving_here:
+#                            # Simulate the move
+#                            self.make_move(source, path_choices[1][0])
+#                            success = self.move_square_to_target(path_choices[1][1], secondary_target.target, through_friendly)
+#                            if success:
+#                                return True
+#                            self.make_move(source, -1)
                     # Ok, can we just move the destination to a different square?
                     neighbor_targets = []
                     for n in path_choices[1][1].neighbors:
@@ -833,7 +853,24 @@ class Game:
         
         return distance_matrix
             
+    def friendly_flood_fill_multiple_sources(self, sources, max_distance):
+        # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
+        # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
+        q = sources
+        distance_matrix = np.ones((self.width, self.height)) * -1
+        for source in q:
+            distance_matrix[source.x, source.y] = 0
+
+        while len(q) > 0:
+            current = q.pop(0)
+            current_distance = distance_matrix[current.x, current.y]
+            for neighbor in current.neighbors:
+                if (distance_matrix[neighbor.x, neighbor.y] == -1 or distance_matrix[neighbor.x, neighbor.y] > (current_distance + 1)) and neighbor.owner == self.my_id:
+                    distance_matrix[neighbor.x, neighbor.y] = current_distance + 1
+                    if current_distance < max_distance - 1:
+                        q.append(neighbor)
         
+        return distance_matrix        
 
 
         

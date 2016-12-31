@@ -14,7 +14,7 @@ import time
 #==============================================================================
 # Variables
 #==============================================================================
-botname = "shummie v26"
+botname = "shummie v26.3-2"
 
 buildup_multiplier = 6
 strength_buffer = 0
@@ -431,10 +431,9 @@ class Game:
         
         path_choices = []
         for d in directions:
-            if d != STILL:
-                neighbor = source.neighbors[d]
-                if distance_matrix[neighbor.x, neighbor.y] == (source_distance - 1):
-                    path_choices.append((d, neighbor))
+            neighbor = source.neighbors[d]
+            if distance_matrix[neighbor.x, neighbor.y] == (source_distance - 1):
+                path_choices.append((d, neighbor))
         
         # There should be at most 2 cells in path_choices
         path_choices.sort(key = lambda x: x[1].production)
@@ -468,7 +467,7 @@ class Game:
                 # Ok, moving this cell away will be ok. let's try moving it to the same direction we are going to.
                 # This is dangerous, make sure to UNDO the fake move.
                 self.make_move(source, path_choices[0][0])
-                success = self.move_square_to_target(path_choices[0][1], destination, through_friendly)
+                success = self.move_square_to_target(path_choices[0][1], destination, False)
                 if success:
                     return True
                 else:
@@ -479,10 +478,10 @@ class Game:
                     for secondary_target in path_choices[0][1].moving_here:
                         # Simulate the move
                         self.make_move(source, path_choices[0][0])
-                        success = self.move_square_to_target(path_choices[0][1], secondary_target.target, through_friendly)
+                        success = self.move_square_to_target(path_choices[0][1], secondary_target.target, False)
                         if success:
                             return True
-                        self.make_move(source, -1)
+                        self.make_move(self, -1)
                 # Ok, can we just move the destination to a different square?
                 neighbor_targets = []
                 for n in path_choices[0][1].neighbors:
@@ -498,7 +497,7 @@ class Game:
                         if n_t[0].strength < path_choices[0][1].strength + sum(x.strength for x in n_t[0].moving_here):
                             if path_choices[0][1].strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
                                 self.make_move(source, path_choices[0][0])
-                                self.move_square_to_target(path_choices[0][1], n_t[0], through_friendly)
+                                self.move_square_to_target(path_choices[0][1], n_t[0], False)
                                 return True
                     else:
                         future_n_strength = path_choices[0][1].strength
@@ -506,7 +505,7 @@ class Game:
                         future_n_strength += n_t[0].strength if (n_t[0].move == -1 or n_t[0].move == STILL) else 0
                         if future_n_strength <= 255 + strength_buffer:
                             self.make_move(source, path_choices[0][0])
-                            self.move_square_to_target(path_choices[0][1], n_t[0], through_friendly)
+                            self.move_square_to_target(path_choices[0][1], n_t[0], True)
                             return True
                         else:
                             break
@@ -517,7 +516,7 @@ class Game:
                     # Ok, moving this cell away will be ok. let's try moving it to the same direction we are going to.
                     # This is dangerous, make sure to UNDO the fake move.
                     self.make_move(source, path_choices[1][0])
-                    success = self.move_square_to_target(path_choices[1][1], destination, through_friendly)
+                    success = self.move_square_to_target(path_choices[1][1], destination, False)
                     if success:
                         return True
                     else:
@@ -528,14 +527,14 @@ class Game:
                         for secondary_target in path_choices[0][1].moving_here:
                             # Simulate the move
                             self.make_move(source, path_choices[1][0])
-                            success = self.move_square_to_target(path_choices[1][1], secondary_target.target, through_friendly)
+                            success = self.move_square_to_target(path_choices[1][1], secondary_target.target, False)
                             if success:
                                 return True
                             self.make_move(source, -1)
                     # Ok, can we just move the destination to a different square?
                     neighbor_targets = []
                     for n in path_choices[1][1].neighbors:
-                        neighbor_strength = n.strength if n.owner == self.my_id else 0
+                        neighbor_strength = n.strength if n.owner == self.game_map.my_id else 0
                         neighbor_strength += sum(x.strength for x in n.moving_here)
                         neighbor_targets.append((n, neighbor_strength))
                     # Try to move to the lowest strength target.
@@ -547,7 +546,7 @@ class Game:
                             if n_t[0].strength < path_choices[1][1].strength + sum(x.strength for x in n_t[0].moving_here):
                                 if path_choices[1][1].strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
                                     self.make_move(source, path_choices[1][0])
-                                    self.move_square_to_target(path_choices[1][1], n_t[0], through_friendly)
+                                    self.move_square_to_target(path_choices[1][1], n_t[0], False)
                                     return True
                         else:
                             future_n_strength = path_choices[1][1].strength
@@ -555,7 +554,7 @@ class Game:
                             future_n_strength += n_t[0].strength if (n_t[0].move == -1 or n_t[0].move == STILL) else 0
                             if future_n_strength <= 255 + strength_buffer:
                                 self.make_move(source, path_choices[1][0])
-                                self.move_square_to_target(path_choices[1][1], n_t[0], through_friendly)
+                                self.move_square_to_target(path_choices[1][1], n_t[0], True)
                                 return True
                             else:
                                 break
@@ -715,7 +714,7 @@ class Game:
                         success = self.move_square_to_target_simple(path_choices[0][1], secondary_target.target, False)
                         if success:
                             return True
-                        self.make_move(source, -1)
+                        self.make_move(self, -1)
                 # Ok, can we just move the destination to a different square?
                 neighbor_targets = []
                 for n in path_choices[0][1].neighbors:
@@ -768,7 +767,7 @@ class Game:
                     # Ok, can we just move the destination to a different square?
                     neighbor_targets = []
                     for n in path_choices[1][1].neighbors:
-                        neighbor_strength = n.strength if n.owner == self.my_id else 0
+                        neighbor_strength = n.strength if n.owner == self.game_map.my_id else 0
                         neighbor_strength += sum(x.strength for x in n.moving_here)
                         neighbor_targets.append((n, neighbor_strength))
                     # Try to move to the lowest strength target.
@@ -865,7 +864,7 @@ class Square:
         self.east = self.game.squares[(self.x + 1) % self.width, (self.y + 0) % self.height]
         self.south = self.game.squares[(self.x + 0) % self.width, (self.y + 1) % self.height]
         self.west = self.game.squares[(self.x - 1) % self.width, (self.y + 0) % self.height]
-        self.neighbors = [self.north, self.east, self.south, self.west] # We might want to remove self...
+        self.neighbors = [self.north, self.east, self.south, self.west, self] # We might want to remove self...
 
     def get_neighbors(self, n = 1, include_self = False):
         # Returns a list containing all neighbors within n squares, excluding self unless include_self = True
@@ -873,12 +872,12 @@ class Square:
         assert isinstance(n, int) and n > 0
         if n == 1:
             if include_self:
-                return self.neighbors # broken.
+                return self.neighbors
             else:
                 return self.neighbors[0:4]            
         else:
             combos = ((dx, dy) for dy in range(-n, n+1) for dx in range(-n, n+1) if abs(dx) + abs(dy) <= n)
-        return (self.game.squares[(self.x + dx) % self.width][(self.y + dy) % self.height] for dx, dy in combos if include_self or dx or dy)        
+        return (self.game_map.squares[(self.x + dx) % self.width][(self.y + dy) % self.height] for dx, dy in combos if include_self or dx or dy)        
     
     def update(self, owner, strength):
         # updates the square with the new owner and strength. Also resets movement variables

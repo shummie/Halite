@@ -14,10 +14,12 @@ import time
 #==============================================================================
 # Variables
 #==============================================================================
-botname = "shummie v26"
+botname = "shummie v27-1-5"
 
 buildup_multiplier = 6
 strength_buffer = 0
+pre_combat_threshold = 2
+combat_radius = 5
 
 #==============================================================================
 # Game Class
@@ -155,6 +157,8 @@ class Game:
         self.update_distance_maps()
         self.update_border_maps()
         
+        self.update_enemy_maps()
+        
         self.update_recover_maps()
        
     def update_calc_maps(self):
@@ -182,9 +186,7 @@ class Game:
             self.distance_from_enemy = distance_from_owned(self.distance_map_no_decay, self.is_enemy_map)
             self.distance_from_enemy[self.is_enemy_map == 1] = 999
         else:
-            self.distance_from_enemy = np.ones((self.width, self.height)) * 999
-
-        
+            self.distance_from_enemy = np.ones((self.width, self.height)) * 999    
         
     def update_border_maps(self):
         self.border_map = np.zeros((self.width, self.height))
@@ -204,6 +206,13 @@ class Game:
             self.distance_from_combat_zone += (self.is_enemy_map + self.is_neutral_map - self.combat_zone_map) * 999
         else:
             self.distance_from_combat_zone = np.ones((self.width, self.height)) * 999
+
+    def update_enemy_maps(self):
+        self.enemy_strength_map = np.zeros((5, self.width, self.height))
+        self.enemy_strength_map[0] = self.strength_map * self.is_enemy_map
+    
+        for x in range(len(self.enemy_strength_map)):
+            self.enemy_strength_map[x] = spread_n(self.enemy_strength_map[0], x)
         
     def update_recover_maps(self):
         max_distance = self.width // 2
@@ -257,8 +266,6 @@ class Game:
         # anything with X of the best_value target should be considered. Let's set this to 4 right now.
         while len(potential_targets) > 0 and self.recover_wtd_map[potential_targets[0].x, potential_targets[0].y] <= (best_target_value + 2):
             target = potential_targets.pop(0)
-            logging.debug("Frame: " + str(self.frame) + " x/y: " + str(target.x) + "/" + str(target.y) + " : " + str(self.recover_wtd_map[target.x, target.y]))
-            logging.debug("Frame: " + str(self.frame) + " x/y: " + str(target.x) + "/" + str(target.y) + " : prod " + str(self.prod_over_str_wtd_map[target.x, target.y]))
             self.attack_cell(target, 3)        
         
     def get_moves_attack(self):
@@ -266,12 +273,20 @@ class Game:
         potential_targets_indices = np.transpose(np.nonzero(self.combat_zone_map))
         potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices]
         potential_targets.sort(key = lambda x: self.distance_from_enemy[x.x, x.y])
-
+        #potential_targets.sort(key = lambda x: self.enemy_strength_map[2, x.x, x.y], reverse = True)
+        
+        # TODO: Should sort by amount of overkill damage possible.
         for square in potential_targets:
             self.attack_cell(square, 1)
         
         # Get a list of all squares within 5 spaces of a combat zone.
-        combat_radius = 5
+        # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?
+#        combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
+#        combat_distance_matrix = self.friendly_flood_fill_multiple_sources(combat_zone_squares, combat_radius+4)
+#        combat_distance_matrix[combat_distance_matrix == -1] = 0
+#        combat_distance_matrix[combat_distance_matrix == 1] = 0
+#        combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]        
+        
         combat_squares_indices = np.transpose(np.nonzero((self.distance_from_combat_zone <= combat_radius) * (self.move_map == -1)))
         combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
         
@@ -411,7 +426,7 @@ class Game:
             square.move = -1
             return
         
-        if square.move != -1:
+        if square.move != -1 and square.move != STILL:
             if square.target != None:
                 square.target.moving_here.remove(square)
         
@@ -440,52 +455,56 @@ class Game:
         path_choices.sort(key = lambda x: x[1].production)
         
         # Implement collision detection later.
+        direction, target = path_choices[0]
         future_strength = source.strength
-        future_strength += path_choices[0][1].strength if (path_choices[0][1].owner == self.my_id and (path_choices[0][1].move == -1 or path_choices[0][1].move == STILL)) else 0
-        if path_choices[0][1].moving_here != []:
-            future_strength += sum(x.strength for x in path_choices[0][1].moving_here)
+        future_strength += (target.production + target.strength) if (target.owner == self.my_id and (target.move == -1 or target.move == STILL)) else 0
+        if target.moving_here != []:
+            future_strength += sum(x.strength for x in target.moving_here)
         
         if future_strength <= 255 + strength_buffer:
             # We're good, make the move
-            self.make_move(source, path_choices[0][0])
+            self.make_move(source, direction)
             return True
             
         # Can we test the second move if it exists?
         if len(path_choices) > 1:
-            future_strength = source.strength + path_choices[1][1].strength if (path_choices[1][1].owner == self.my_id and (path_choices[1][1].move == -1 or path_choices[1][1].move == STILL)) else 0
-            if path_choices[1][1].moving_here != []:
-                future_strength += sum(x.strength for x in path_choices[1][1].moving_here)
+            direction, target = path_choices[1]
+            future_strength = source.strength 
+            future_strength += (target.production + target.strength) if (target.owner == self.my_id and (target.move == -1 or target.move == STILL)) else 0
+            if target.moving_here != []:
+                future_strength += sum(x.strength for x in target.moving_here)
             
             if future_strength <= 255 + strength_buffer:
                 # We're good, make the move
-                self.make_move(source, path_choices[1][0])
+                self.make_move(source, direction)
                 return True
 
         # Ok, so moving here will result in too much strength. What are our options?
         # Can we move the cell that we are moving to?
-        if path_choices[0][1].owner == self.my_id and (path_choices[0][1].move == -1 or path_choices[0][1] == STILL):
-            if source.strength + sum(x.strength for x in path_choices[0][1].moving_here) <= 255 + strength_buffer:
+        direction, target = path_choices[0]
+        if target.owner == self.my_id and (target.move == -1 or target.move == STILL):
+            if source.strength + sum(x.strength for x in target.moving_here) <= 255 + strength_buffer:
                 # Ok, moving this cell away will be ok. let's try moving it to the same direction we are going to.
                 # This is dangerous, make sure to UNDO the fake move.
-                self.make_move(source, path_choices[0][0])
-                success = self.move_square_to_target(path_choices[0][1], destination, through_friendly)
+                self.make_move(source, direction)
+                success = self.move_square_to_target(target, destination, through_friendly)
                 if success:
                     return True
                 else:
                     # UNDO THE MOVE
                     self.make_move(source, -1)
                 # Is there anywhere else we can move this cell?
-                if path_choices[0][1].moving_here != []:
-                    for secondary_target in path_choices[0][1].moving_here:
+                if target.moving_here != []:
+                    for secondary_target in target.moving_here:
                         # Simulate the move
-                        self.make_move(source, path_choices[0][0])
-                        success = self.move_square_to_target(path_choices[0][1], secondary_target.target, through_friendly)
+                        self.make_move(source, direction)
+                        success = self.move_square_to_target(target, secondary_target.target, through_friendly)
                         if success:
                             return True
                         self.make_move(source, -1)
                 # Ok, can we just move the destination to a different square?
                 neighbor_targets = []
-                for n in path_choices[0][1].neighbors:
+                for n in target.neighbors:
                     neighbor_strength = n.strength if n.owner == self.my_id else 0
                     neighbor_strength += sum(x.strength for x in n.moving_here)
                     neighbor_targets.append((n, neighbor_strength))
@@ -495,46 +514,47 @@ class Game:
                 for n_t in neighbor_targets:
                     if n_t[0].owner != self.my_id:
                         # We're attempting to attack a cell
-                        if n_t[0].strength < path_choices[0][1].strength + sum(x.strength for x in n_t[0].moving_here):
-                            if path_choices[0][1].strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
-                                self.make_move(source, path_choices[0][0])
-                                self.move_square_to_target(path_choices[0][1], n_t[0], through_friendly)
+                        if n_t[0].strength < target.strength + sum(x.strength for x in n_t[0].moving_here):
+                            if target.strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
+                                self.make_move(source, direction)
+                                self.move_square_to_target(target, n_t[0], False)
                                 return True
                     else:
-                        future_n_strength = path_choices[0][1].strength
+                        future_n_strength = target.strength
                         future_n_strength += sum(x.strength for x in n_t[0].moving_here)
                         future_n_strength += n_t[0].strength if (n_t[0].move == -1 or n_t[0].move == STILL) else 0
                         if future_n_strength <= 255 + strength_buffer:
-                            self.make_move(source, path_choices[0][0])
-                            self.move_square_to_target(path_choices[0][1], n_t[0], through_friendly)
+                            self.make_move(source, direction)
+                            self.move_square_to_target(target, n_t[0], True)
                             return True
                         else:
                             break
         # Ok, the cell we are moving to isn't the problem. WE are. Let's try the secondary direction
         if len(path_choices) > 1:
-            if path_choices[1][1].owner == self.my_id and (path_choices[1][1].move == -1 or path_choices[1][1] == STILL):
-                if source.strength + sum(x.strength for x in path_choices[1][1].moving_here) <= 255 + strength_buffer:
+            direction, target = path_choices[1]
+            if target.owner == self.my_id and (target.move == -1 or target.move == STILL):
+                if source.strength + sum(x.strength for x in target.moving_here) <= 255 + strength_buffer:
                     # Ok, moving this cell away will be ok. let's try moving it to the same direction we are going to.
                     # This is dangerous, make sure to UNDO the fake move.
-                    self.make_move(source, path_choices[1][0])
-                    success = self.move_square_to_target(path_choices[1][1], destination, through_friendly)
+                    self.make_move(source, direction)
+                    success = self.move_square_to_target(target, destination, through_friendly)
                     if success:
                         return True
                     else:
                         # UNDO THE MOVE
                         self.make_move(source, -1)
                     # Is there anywhere else we can move this cell?
-                    if path_choices[1][1].moving_here != []:
-                        for secondary_target in path_choices[0][1].moving_here:
+                    if target.moving_here != []:
+                        for secondary_target in target.moving_here:
                             # Simulate the move
-                            self.make_move(source, path_choices[1][0])
-                            success = self.move_square_to_target(path_choices[1][1], secondary_target.target, through_friendly)
+                            self.make_move(source, direction)
+                            success = self.move_square_to_target(target, secondary_target.target, through_friendly)
                             if success:
                                 return True
                             self.make_move(source, -1)
                     # Ok, can we just move the destination to a different square?
                     neighbor_targets = []
-                    for n in path_choices[1][1].neighbors:
+                    for n in target.neighbors:
                         neighbor_strength = n.strength if n.owner == self.my_id else 0
                         neighbor_strength += sum(x.strength for x in n.moving_here)
                         neighbor_targets.append((n, neighbor_strength))
@@ -544,18 +564,18 @@ class Game:
                     for n_t in neighbor_targets:
                         if n_t[0].owner != self.my_id:
                             # We're attempting to attack a cell
-                            if n_t[0].strength < path_choices[1][1].strength + sum(x.strength for x in n_t[0].moving_here):
-                                if path_choices[1][1].strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
-                                    self.make_move(source, path_choices[1][0])
-                                    self.move_square_to_target(path_choices[1][1], n_t[0], through_friendly)
+                            if n_t[0].strength < target.strength + sum(x.strength for x in n_t[0].moving_here):
+                                if target.strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
+                                    self.make_move(source, direction)
+                                    self.move_square_to_target(target, n_t[0], False)
                                     return True
                         else:
-                            future_n_strength = path_choices[1][1].strength
+                            future_n_strength = target.strength
                             future_n_strength += sum(x.strength for x in n_t[0].moving_here)
                             future_n_strength += n_t[0].strength if (n_t[0].move == -1 or n_t[0].move == STILL) else 0
                             if future_n_strength <= 255 + strength_buffer:
-                                self.make_move(source, path_choices[1][0])
-                                self.move_square_to_target(path_choices[1][1], n_t[0], through_friendly)
+                                self.make_move(source, direction)
+                                self.move_square_to_target(target, n_t[0], True)
                                 return True
                             else:
                                 break
@@ -673,52 +693,56 @@ class Game:
                 path_choices.append(ns_move)
                 path_choices.append(ew_move)
                 
+        direction, target = path_choices[0]                
         future_strength = source.strength
-        future_strength += path_choices[0][1].strength if (path_choices[0][1].owner == self.my_id and (path_choices[0][1].move == -1 or path_choices[0][1].move == STILL)) else 0
-        if path_choices[0][1].moving_here != []:
-            future_strength += sum(x.strength for x in path_choices[0][1].moving_here)
+        future_strength += (target.production + target.strength) if (target.owner == self.my_id and (target.move == -1 or target.move == STILL)) else 0
+        if target.moving_here != []:
+            future_strength += sum(x.strength for x in target.moving_here)
         
         if future_strength <= 255 + strength_buffer:
             # We're good, make the move
-            self.make_move(source, path_choices[0][0])
+            self.make_move(source, direction)
             return True
             
         # Can we test the second move if it exists?
         if len(path_choices) > 1:
-            future_strength = source.strength + path_choices[1][1].strength if (path_choices[1][1].owner == self.my_id and (path_choices[1][1].move == -1 or path_choices[1][1].move == STILL)) else 0
-            if path_choices[1][1].moving_here != []:
-                future_strength += sum(x.strength for x in path_choices[1][1].moving_here)
+            direction, target = path_choices[1]
+            future_strength = source.strength 
+            future_strength += (target.production + target.strength) if (target.owner == self.my_id and (target.move == -1 or target.move == STILL)) else 0
+            if target.moving_here != []:
+                future_strength += sum(x.strength for x in target.moving_here)
             
             if future_strength <= 255 + strength_buffer:
                 # We're good, make the move
-                self.make_move(source, path_choices[1][0])
+                self.make_move(source, direction)
                 return True
 
         # Ok, so moving here will result in too much strength. What are our options?
         # Can we move the cell that we are moving to?
-        if path_choices[0][1].owner == self.my_id and (path_choices[0][1].move == -1 or path_choices[0][1] == STILL):
-            if source.strength + sum(x.strength for x in path_choices[0][1].moving_here) <= 255 + strength_buffer:
+        direction, target = path_choices[0]
+        if target.owner == self.my_id and (target.move == -1 or target.move == STILL):
+            if source.strength + sum(x.strength for x in target.moving_here) <= 255 + strength_buffer:
                 # Ok, moving this cell away will be ok. let's try moving it to the same direction we are going to.
                 # This is dangerous, make sure to UNDO the fake move.
-                self.make_move(source, path_choices[0][0])
-                success = self.move_square_to_target_simple(path_choices[0][1], destination, False)
+                self.make_move(source, direction)
+                success = self.move_square_to_target(target, destination, through_friendly)
                 if success:
                     return True
                 else:
                     # UNDO THE MOVE
                     self.make_move(source, -1)
                 # Is there anywhere else we can move this cell?
-                if path_choices[0][1].moving_here != []:
-                    for secondary_target in path_choices[0][1].moving_here:
+                if target.moving_here != []:
+                    for secondary_target in target.moving_here:
                         # Simulate the move
-                        self.make_move(source, path_choices[0][0])
-                        success = self.move_square_to_target_simple(path_choices[0][1], secondary_target.target, False)
+                        self.make_move(source, direction)
+                        success = self.move_square_to_target(target, secondary_target.target, through_friendly)
                         if success:
                             return True
                         self.make_move(source, -1)
                 # Ok, can we just move the destination to a different square?
                 neighbor_targets = []
-                for n in path_choices[0][1].neighbors:
+                for n in target.neighbors:
                     neighbor_strength = n.strength if n.owner == self.my_id else 0
                     neighbor_strength += sum(x.strength for x in n.moving_here)
                     neighbor_targets.append((n, neighbor_strength))
@@ -728,46 +752,47 @@ class Game:
                 for n_t in neighbor_targets:
                     if n_t[0].owner != self.my_id:
                         # We're attempting to attack a cell
-                        if n_t[0].strength < path_choices[0][1].strength + sum(x.strength for x in n_t[0].moving_here):
-                            if path_choices[0][1].strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
-                                self.make_move(source, path_choices[0][0])
-                                self.move_square_to_target_simple(path_choices[0][1], n_t[0], False)
+                        if n_t[0].strength < target.strength + sum(x.strength for x in n_t[0].moving_here):
+                            if target.strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
+                                self.make_move(source, direction)
+                                self.move_square_to_target(target, n_t[0], False)
                                 return True
                     else:
-                        future_n_strength = path_choices[0][1].strength
+                        future_n_strength = target.strength
                         future_n_strength += sum(x.strength for x in n_t[0].moving_here)
                         future_n_strength += n_t[0].strength if (n_t[0].move == -1 or n_t[0].move == STILL) else 0
                         if future_n_strength <= 255 + strength_buffer:
-                            self.make_move(source, path_choices[0][0])
-                            self.move_square_to_target_simple(path_choices[0][1], n_t[0], True)
+                            self.make_move(source, direction)
+                            self.move_square_to_target(target, n_t[0], True)
                             return True
                         else:
                             break
         # Ok, the cell we are moving to isn't the problem. WE are. Let's try the secondary direction
         if len(path_choices) > 1:
-            if path_choices[1][1].owner == self.my_id and (path_choices[1][1].move == -1 or path_choices[1][1] == STILL):
-                if source.strength + sum(x.strength for x in path_choices[1][1].moving_here) <= 255 + strength_buffer:
+            direction, target = path_choices[1]
+            if target.owner == self.my_id and (target.move == -1 or target.move == STILL):
+                if source.strength + sum(x.strength for x in target.moving_here) <= 255 + strength_buffer:
                     # Ok, moving this cell away will be ok. let's try moving it to the same direction we are going to.
                     # This is dangerous, make sure to UNDO the fake move.
-                    self.make_move(source, path_choices[1][0])
-                    success = self.move_square_to_target_simple(path_choices[1][1], destination, False)
+                    self.make_move(source, direction)
+                    success = self.move_square_to_target(target, destination, through_friendly)
                     if success:
                         return True
                     else:
                         # UNDO THE MOVE
                         self.make_move(source, -1)
                     # Is there anywhere else we can move this cell?
-                    if path_choices[1][1].moving_here != []:
-                        for secondary_target in path_choices[0][1].moving_here:
+                    if target.moving_here != []:
+                        for secondary_target in target.moving_here:
                             # Simulate the move
-                            self.make_move(source, path_choices[1][0])
-                            success = self.move_square_to_target_simple(path_choices[1][1], secondary_target.target, False)
+                            self.make_move(source, direction)
+                            success = self.move_square_to_target(target, secondary_target.target, through_friendly)
                             if success:
                                 return True
                             self.make_move(source, -1)
                     # Ok, can we just move the destination to a different square?
                     neighbor_targets = []
-                    for n in path_choices[1][1].neighbors:
+                    for n in target.neighbors:
                         neighbor_strength = n.strength if n.owner == self.my_id else 0
                         neighbor_strength += sum(x.strength for x in n.moving_here)
                         neighbor_targets.append((n, neighbor_strength))
@@ -777,23 +802,23 @@ class Game:
                     for n_t in neighbor_targets:
                         if n_t[0].owner != self.my_id:
                             # We're attempting to attack a cell
-                            if n_t[0].strength < path_choices[1][1].strength + sum(x.strength for x in n_t[0].moving_here):
-                                if path_choices[1][1].strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
-                                    self.make_move(source, path_choices[1][0])
-                                    self.move_square_to_target_simple(path_choices[1][1], n_t[0], False)
+                            if n_t[0].strength < target.strength + sum(x.strength for x in n_t[0].moving_here):
+                                if target.strength + sum(x.strength for x in n_t[0].moving_here) <= 255 + strength_buffer:
+                                    self.make_move(source, direction)
+                                    self.move_square_to_target(target, n_t[0], False)
                                     return True
                         else:
-                            future_n_strength = path_choices[1][1].strength
+                            future_n_strength = target.strength
                             future_n_strength += sum(x.strength for x in n_t[0].moving_here)
                             future_n_strength += n_t[0].strength if (n_t[0].move == -1 or n_t[0].move == STILL) else 0
                             if future_n_strength <= 255 + strength_buffer:
-                                self.make_move(source, path_choices[1][0])
-                                self.move_square_to_target_simple(path_choices[1][1], n_t[0], True)
+                                self.make_move(source, direction)
+                                self.move_square_to_target(target, n_t[0], True)
                                 return True
                             else:
                                 break
         # We can't do anything.
-        return False                
+        return False                 
                 
                 
             
@@ -833,8 +858,24 @@ class Game:
         
         return distance_matrix
             
-        
+    def friendly_flood_fill_multiple_sources(self, sources, max_distance):
+        # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
+        # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
+        q = sources
+        distance_matrix = np.ones((self.width, self.height)) * -1
+        for source in q:
+            distance_matrix[source.x, source.y] = 0
 
+        while len(q) > 0:
+            current = q.pop(0)
+            current_distance = distance_matrix[current.x, current.y]
+            for neighbor in current.neighbors:
+                if (distance_matrix[neighbor.x, neighbor.y] == -1 or distance_matrix[neighbor.x, neighbor.y] > (current_distance + 1)) and neighbor.owner == self.my_id:
+                    distance_matrix[neighbor.x, neighbor.y] = current_distance + 1
+                    if current_distance < max_distance - 1:
+                        q.append(neighbor)
+        
+        return distance_matrix        
 
         
 
