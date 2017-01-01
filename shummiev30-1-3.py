@@ -334,7 +334,7 @@ class Game:
         # TODO: Should sort by amount of overkill damage possible.
         for square in potential_targets:
             self.attack_cell(square, 1)
-        
+    
         # Get a list of all squares within 5 spaces of a combat zone.
         # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
@@ -342,7 +342,7 @@ class Game:
         combat_distance_matrix[combat_distance_matrix == -1] = 0
         combat_distance_matrix[combat_distance_matrix == 1] = 0
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]        
-        
+        combat_squares.sort(key = lambda x: x.strength, reverse = True)
 #        combat_squares_indices = np.transpose(np.nonzero((self.distance_from_combat_zone <= combat_radius) * (self.move_map == -1)))
 #        combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
         
@@ -546,7 +546,7 @@ class Game:
             future_strength = 0
             if target.owner == self.my_id:
                 if target.move == -1 or target.move == STILL:
-                    future_strength = target.production + target.strength
+                    future_strength = target.strength #+ target.production
             for sq in target.moving_here:
                 future_strength += sq.strength
             if future_strength + source.strength <= 255 + strength_buffer:
@@ -576,7 +576,7 @@ class Game:
                                 # Can we safely move into this square?
                                 future_n_t_strength = target.strength
                                 if n_t.move == -1 or n_t.move == STILL:
-                                    future_n_t_strength += n_t.strength + n_t.production
+                                    future_n_t_strength += n_t.strength #+ n_t.production
                                 for n_t_moving in n_t.moving_here:
                                     future_n_t_strength += n_t_moving.strength
                                 if future_n_t_strength <= 255 + strength_buffer:
@@ -705,7 +705,19 @@ class Game:
             future_strength = 0
             if target.owner == self.my_id:
                 if target.move == -1 or target.move == STILL:
-                    future_strength = target.production + target.strength
+                    future_strength = target.strength #+ target.production
+            for sq in target.moving_here:
+                future_strength += sq.strength
+            if future_strength + source.strength <= 255 + strength_buffer:
+                self.make_move(source, direction)
+                return True
+                
+        # Try simple resolution
+        for (direction, target) in path_choices:
+            future_strength = 0
+            if target.owner == self.my_id:
+                if target.move == -1 or target.move == STILL:
+                    future_strength = target.strength #+ target.production 
             for sq in target.moving_here:
                 future_strength += sq.strength
             if future_strength + source.strength <= 255 + strength_buffer:
@@ -727,26 +739,27 @@ class Game:
                     # Ok, let's move the target square.
                     # Keep it simple this time. Check all neighbors.
                     # Only move for now to own squares
-                        n_directions = [NORTH, EAST, SOUTH, WEST]
+                        n_directions = list(range(4))
                         random.shuffle(n_directions)
                         for n_d in n_directions:
                             n_t = target.neighbors[n_d]
                             if n_t.owner == self.my_id:
                                 # Can we safely move into this square?
-                                future_n_t_strength = 0
+                                future_n_t_strength = target.strength
                                 if n_t.move == -1 or n_t.move == STILL:
-                                    future_n_t_strength += n_t.strength + n_t.production
+                                    future_n_t_strength += n_t.strength# + n_t.production
                                 for n_t_moving in n_t.moving_here:
                                     future_n_t_strength += n_t_moving.strength
-                                if future_n_t_strength + target.strength <= 255 + strength_buffer:
+                                if future_n_t_strength <= 255 + strength_buffer:
                                     self.make_move(source, direction)
-                                    
-                                    self.make_move(target, n_d)
-                                    return True
+                                    success = self.move_square_to_target(target, n_t, True)
+                                    if not success:
+                                        self.make_move(source, -1)
+                                    else:
+                                        return True
 
         # Nothing to do left
-        return False
-            
+        return False            
                 
                 
             
