@@ -13,7 +13,7 @@ import time
 #==============================================================================
 # Variables
 #==============================================================================
-botname = "shummie v31-1-1"
+botname = "shummie v31-1-2"
 
 #buildup_multiplier = 11
 strength_buffer = 0
@@ -39,7 +39,7 @@ class Game:
         self.create_squares_list()
         
         self.frame = -1
-        self.phase = 0
+        self.phase = 1
     
         self.get_frame()
             
@@ -51,6 +51,8 @@ class Game:
         self.max_turns = 10 * ((self.width * self.height) ** 0.5)
         
         self.set_configs()
+        
+        self.combat_zone_map = None
         
         # Send the botname
         send_string(botname)
@@ -161,7 +163,7 @@ class Game:
     
     def update_configs(self):
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 5), 8)
-        self.combat_radius = int(min(max(5, self.percent_owned * self.width), self.width // 2))
+        self.combat_radius = int(min(max(5, self.percent_owned * self.width // 2), self.width // 2))
         
         if np.sum(self.combat_zone_map) > 3:
             self.production_cells_out = 6
@@ -209,6 +211,7 @@ class Game:
         #start = time.time()
         
         self.update_recover_maps()
+        self.update_value_production_map()
         #end = time.time()
         #logging.debug("update_recover Frame: " + str(game.frame) + " : " + str(end - start))
         
@@ -268,7 +271,9 @@ class Game:
 
         #self.inner_border_map = (self.distance_from_border == 1) * 1
         #self.inner_border_indices = np.transpose(np.where(self.inner_border_map == 1))
-        
+        if self.combat_zone_map != None:
+            self.last_turn_combat_map = np.copy(self.combat_zone_map)
+            self.blurred_combat_map = np.minimum(self.last_turn_combat_map + self.combat_zone_map, 1)
         self.combat_zone_map = self.border_map * (self.strength_map == 0)
         
 #        if self.starting_player_count > 1 and np.sum(self.combat_zone_map) >= 1:  # Breaks in single player mode otherwise.
@@ -312,30 +317,15 @@ class Game:
         self.recover_wtd_map = 1 / np.maximum(self.prod_over_str_wtd_map, 0.01)
 
     def update_value_production_map(self):
-        self.value_production_map = (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0) * self.recover_avg_map
+        self.value_production_map = (self.border_map - self.blurred_combat_map) * self.recover_wtd_map
         self.value_production_map[self.value_production_map == 0] = 9999
         bx, by = np.unravel_index(self.value_production_map.argmin(), (self.width, self.height))
         best_cell_value = self.value_production_map[bx, by]
 
-        # Some cells are not worth capturing, use best_cell_value as reference.
+        avg_recov_threshold = 2
+        avg_map_recovery = np.sum(self.strength_map * self.is_neutral_map) / np.sum(self.production_map * self.is_neutral_map)
+        self.value_production_map[self.value_production_map > (avg_recov_threshold * avg_map_recovery)] = 9999
 
-        potential_targets = []
-        for c in potential_targets_indices:
-            target = self.squares[c[0], c[1]]
-            value = self.recover_wtd_map[c[0], c[1]]
-            cells_out = 1
-            while cells_out <= self.production_cells_out:
-                potential_targets.append((target, value, cells_out))
-                cells_out += 1
-        
-        if len(potential_targets) == 0: 
-            return
-        potential_targets.sort(key = lambda x: x[0].strength)    
-        potential_targets.sort(key = lambda x: x[1] + x[2])
-        
-        # Keep only the top 80ile?
-        potential_targets = potential_targets[0:int(len(potential_targets) * .9)]        
-        
     def get_moves(self):
         # This is the main logic controlling code.
         # Find super high production cells
@@ -511,8 +501,9 @@ class Game:
     def get_moves_production(self):
         # Tries to find the best cells to attack from a production standpoint.
         # Does not try to attack cells that are in combat zones.
-        potential_targets_indices = np.transpose(np.nonzero((self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)))
-        potential_targets = [(self.squares[c[0], c[1]], self.recover_wtd_map[c[0], c[1]], 1) for c in potential_targets_indices]
+        #potential_targets_indices = np.transpose(np.nonzero((self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0) * (self.value_production_map != 9999)))
+        potential_targets_indices = np.transpose(np.nonzero((self.value_production_map != 9999)))
+        potential_targets = [(self.squares[c[0], c[1]], self.value_production_map[c[0], c[1]], 1) for c in potential_targets_indices]
 
         potential_targets = []
         for c in potential_targets_indices:
@@ -529,7 +520,7 @@ class Game:
         potential_targets.sort(key = lambda x: x[1] + x[2])
         
         # Keep only the top 80ile?
-        potential_targets = potential_targets[0:int(len(potential_targets) * .9)]
+        #potential_targets = potential_targets[0:int(len(potential_targets) * .9)]
         
 #        best_target_value = potential_targets[0][1]
         # anything with X of the best_value target should be considered. Let's set this to 4 right now.
@@ -560,11 +551,13 @@ class Game:
                     # Move towards the closest border
                     #if not self.inner_border_map[square.x, square.y]:
                         # For now, move to the square with the lowest recovery
-                    value_map = (self.recover_wtd_map + self.distance_map_no_decay[square.x, square.y] * 1) * self.border_map
+                    value_map = (self.value_production_map + self.distance_map_no_decay[square.x, square.y] * 1) * self.border_map
                     #best_target_value = (self.recover_wtd_map * (self.border_map - self.combat_zone_map)).argmin()
                     #value_map = value_map * (1 - self.combat_zone_map)
-                    value_map[np.nonzero(self.combat_zone_map)] = 0
-                    value_map += self.distance_map_no_decay[square.x, square.y] * 0.75 * self.combat_zone_map
+                    #value_map[np.nonzero(self.combat_zone_map)] = 0
+                    value_map[np.nonzero(self.blurred_combat_map)] = 0
+                    #value_map += self.distance_map_no_decay[square.x, square.y] * 0.75 * self.combat_zone_map
+                    value_map += self.distance_map_no_decay[square.x, square.y] * 0.75 * self.blurred_combat_map
                     #value_map[self.combat_zone_map == 1] = self.distance_map_no_decay[square.x, square.y] * .8
                     value_map[value_map == 0] = 9999
                     tx, ty = np.unravel_index(value_map.argmin(), (self.width, self.height))
