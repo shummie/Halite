@@ -1,10 +1,13 @@
 History
 --------
-Version 30 - ?? / ?? - mu:, sigma: - 
-* 
+Version 30 - ?? / ?? - mu: , sigma: - January 1, 2017
+* Moved most parameters to a function to allow changing (some do!) based on game state.
+* Tweaked some parameters for the above.
+* Rewrote collision code. Much simplier. added a last check function to catch some that weren't working
 
-Version 29 - ?? / ??? - mu:, sigma: - December 31, 2016
+Version 29 - 6 / 1251 - mu: 51.71, sigma: 0.68 - December 31, 2016
 * Removed all distance maps. They took too long to calculate. Do a back end check later to make sure i didn't break anything.
+* Hit a peak of 3! (2 but that's cheating since nmalaguti reuploaded)
 
 Version 28 - 17 / 1242 - mu: 48.55, sigma: 0.95 - December 31, 2016
 * Trying to reduce timeout errors on large maps. Main culprits are distance and recover maps.
