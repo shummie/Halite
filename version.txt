@@ -1,6 +1,30 @@
 History
 --------
-Version 30 - ?? / ?? - mu: , sigma: - January 1, 2017
+Version 36 - ?? / ???? - mu: , sigma: - January 3, 2017
+10:22
+* Don't try to expand when production is > 10% more than the next highest enemy. Instead, use the strength to attack.
+* Added code to try to expand towards the global maximum
+
+Version 35 - 5 / 1268 - mu: 51.84, sigma: 0.72 - January 3, 2017
+* Penalize capturing cells too far away. I expect this actually perform worse, but let's try it out.
+
+Version 34 - 6 / 1263 - mu: 51.24, sigma: 0.74 - January 3, 2017
+* Oops, i forgot to make sure I didn't break anything
+
+Version 33 - 1229 / 1263 - mu: 7.86, sigma: 1.78 - January 3, 2017
+* Try to fix a timeout error occuring on the largest of maps.
+
+Version 32 - 16 / 1263 - mu: 49.6, sigma: 1.2 - January 3, 2017
+* Tweaked combat logic to take controlled/enemy production squares into consideration (How much does this actually affect the bot?)
+* Allow the bot to break through to create additional attack lanes if it thinks it's strong enough
+
+Version 31 - 5 / 1263 - mu: 51.59 , sigma: 0.70 - January 3, 2017
+* Alter buildup parameters to vary based on distance from border & production size
+* Tweak the production evaluation heuristic & moved to separate function
+* Allow breaking through enemy borders if strength is overloaded
+* Slightly more selective in which border cells to attack
+
+Version 30 - 6 / 1260 - mu: 50.45, sigma: 0.68 - January 1, 2017
 * Moved most parameters to a function to allow changing (some do!) based on game state.
 * Tweaked some parameters for the above.
 * Rewrote collision code. Much simplier. added a last check function to catch some that weren't working

@@ -123,3 +123,5 @@ Halite-Visualizer-win32-x64
 *.sh
 *.zip
 *.exe
+*.xlsx
+*.sqlite3
