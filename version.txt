@@ -1,6 +1,14 @@
 History
 --------
-Version 37 - ?? / ???? - mu: , sigma: - January 3, 2017
+Version 38 - ?? / ???? - mu: , sigma: - January 5, 2017
+* Change production 0 cells to 0.1 from 1 for Dijkstra calculations
+* Give a bigger bonus to closer cells when calculating global max distance ^ 0.15 instead of 0.05
+* Allow cells to build up more before being used for attacking
+
+Version 38 - ?? / ???? - mu: , sigma: - January 5, 2017
+* Testing out hunting for global max. This is not going to end well.
+
+Version 37 - 6 / 1292 - mu: 51.71, sigma: 0.67 - January 3, 2017
 * Partially Revert not expanding when production > 10%. Seems to cause pathing issues.
 
 Version 36 - 6 / 1268 - mu: 50.57, sigma: 0.77 - January 3, 2017

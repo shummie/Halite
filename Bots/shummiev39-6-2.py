@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v39"
+botname = "shummie v39-6-2"
 strength_buffer = 0
 
 # ==============================================================================
@@ -196,7 +196,7 @@ class Game:
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 7)
         # self.buildup_multiplier = self.buildup_multiplier + (self.distance_from_border ** 0.4)
         # self.combat_radius = int(min(max(5, self.percent_owned * self.width / 2), self.width // 2))
-        self.combat_radius = 15
+        self.combat_radius = 10
 
         if np.sum(self.combat_zone_map) > 3:
             self.production_cells_out = int(self.width / self.starting_player_count / 2.5)
@@ -540,7 +540,7 @@ class Game:
         # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
         combat_distance_matrix = self.friendly_flood_fill_multiple_sources_cells_out(combat_zone_squares, self.combat_radius)
-        np.savetxt("maps%i.txt" % self.frame, combat_distance_matrix)
+        np.savetxt("Maps\maps%i.txt" % self.frame, combat_distance_matrix)
         combat_distance_matrix[combat_distance_matrix == -1] = 0
         combat_distance_matrix[combat_distance_matrix == 1] = 0
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
@@ -1091,11 +1091,15 @@ class Game:
         while len(q) > 0:
             current = q.pop(0)
             current_distance = distance_matrix[current.x, current.y]
+            friendlies = 0
             for neighbor in current.neighbors:
                 if (distance_matrix[neighbor.x, neighbor.y] == -1 or distance_matrix[neighbor.x, neighbor.y] > (current_distance + 1)) and neighbor.owner == self.my_id:
-                    distance_matrix[neighbor.x, neighbor.y] = current_distance + 1
+                    friendlies += 1
+            for neighbor in current.neighbors:
+                if (distance_matrix[neighbor.x, neighbor.y] == -1 or distance_matrix[neighbor.x, neighbor.y] > (current_distance + 1)) and neighbor.owner == self.my_id:
+                    distance_matrix[neighbor.x, neighbor.y] = current_distance + friendlies
                     if current_distance < max_distance - 1:
-                        current_distance += 1
+                        current_distance += friendlies
                         q.append(neighbor)
 
         return distance_matrix

@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v39"
+botname = "shummie v39-5-2"
 strength_buffer = 0
 
 # ==============================================================================
@@ -196,7 +196,7 @@ class Game:
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 7)
         # self.buildup_multiplier = self.buildup_multiplier + (self.distance_from_border ** 0.4)
         # self.combat_radius = int(min(max(5, self.percent_owned * self.width / 2), self.width // 2))
-        self.combat_radius = 15
+        self.combat_radius = 7
 
         if np.sum(self.combat_zone_map) > 3:
             self.production_cells_out = int(self.width / self.starting_player_count / 2.5)
@@ -379,7 +379,7 @@ class Game:
 
     def update_value_production_map(self):
 
-        # self.value_production_map = (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0) * np.minimum(self.recover_wtd_map, self.recover_max_map)
+        #self.value_production_map = (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0) * np.minimum(self.recover_wtd_map, self.recover_max_map)
         self.value_production_map = (self.border_map - self.combat_zone_map) * self.recover_wtd_map
         self.value_production_map[self.value_production_map == 0] = 9999
         turns_left = self.max_turns - self.frame
@@ -539,8 +539,7 @@ class Game:
         # Get a list of all squares within 5 spaces of a combat zone.
         # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
-        combat_distance_matrix = self.friendly_flood_fill_multiple_sources_cells_out(combat_zone_squares, self.combat_radius)
-        np.savetxt("maps%i.txt" % self.frame, combat_distance_matrix)
+        combat_distance_matrix = self.friendly_flood_fill_multiple_sources(combat_zone_squares, self.combat_radius)
         combat_distance_matrix[combat_distance_matrix == -1] = 0
         combat_distance_matrix[combat_distance_matrix == 1] = 0
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
@@ -1076,26 +1075,6 @@ class Game:
                 if (distance_matrix[neighbor.x, neighbor.y] == -1 or distance_matrix[neighbor.x, neighbor.y] > (current_distance + 1)) and neighbor.owner == self.my_id:
                     distance_matrix[neighbor.x, neighbor.y] = current_distance + 1
                     if current_distance < max_distance - 1:
-                        q.append(neighbor)
-
-        return distance_matrix
-
-    def friendly_flood_fill_multiple_sources_cells_out(self, sources, max_distance=999):
-        # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
-        # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
-        q = sources
-        distance_matrix = np.ones((self.width, self.height)) * -1
-        for source in q:
-            distance_matrix[source.x, source.y] = 0
-
-        while len(q) > 0:
-            current = q.pop(0)
-            current_distance = distance_matrix[current.x, current.y]
-            for neighbor in current.neighbors:
-                if (distance_matrix[neighbor.x, neighbor.y] == -1 or distance_matrix[neighbor.x, neighbor.y] > (current_distance + 1)) and neighbor.owner == self.my_id:
-                    distance_matrix[neighbor.x, neighbor.y] = current_distance + 1
-                    if current_distance < max_distance - 1:
-                        current_distance += 1
                         q.append(neighbor)
 
         return distance_matrix
