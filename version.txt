@@ -1,11 +1,19 @@
 History
 --------
-Version 38 - ?? / ???? - mu: , sigma: - January 5, 2017
+Version 41 - ?? / ???? - mu: , sigma: - January 6, 2017
+* Added a new function to build up strength if combat is expected soon. Hopefully will help in small map games
+* Allow attacking into neutral territory to avoid strength collision
+* Hold back expansion when production > 10% of next highest every other frame.
+ 
+Version 40 - 7 / 1304 - mu: 50.86, sigma: 0.72 - January 6, 2017
+* Fix a bug, didn't completely revert an experiement
+
+Version 39 - 12 / 1303 - mu: 48.74, sigma: 0.88 - January 6, 2017
 * Change production 0 cells to 0.1 from 1 for Dijkstra calculations
 * Give a bigger bonus to closer cells when calculating global max distance ^ 0.15 instead of 0.05
 * Allow cells to build up more before being used for attacking
 
-Version 38 - ?? / ???? - mu: , sigma: - January 5, 2017
+Version 38 - 4 / 1302 - mu: 52.3 , sigma: 0.69 - January 5, 2017
 * Testing out hunting for global max. This is not going to end well.
 
 Version 37 - 6 / 1292 - mu: 51.71, sigma: 0.67 - January 3, 2017

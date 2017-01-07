@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v41"
+botname = "shummie v41-2-1"
 strength_buffer = 0
 print_maps = True
 
@@ -370,6 +370,7 @@ class Game:
             current = border_square_closest_to_global.vertex
             # logging.debug("frame: " + str(self.frame) + " bx/by: " + str(tx) + "/" + str(ty))
             # logging.debug(str(list(temp_map)))
+            # current = self.global_max_square.vertex
             while current != self.global_max_square.vertex:
                 path.append(current)
                 # current = self.dij_recov_route[border_square_closest_to_global.vertex, current]
@@ -430,8 +431,8 @@ class Game:
         avg_cost_to_global -= 4  # Testing various values to weight towards global max.
         self.value_production_map[border_square_closest_to_global.x, border_square_closest_to_global.y] = min(self.total_avg_cost_to_global - 7, avg_cost_to_global, self.value_production_map[border_square_closest_to_global.x, border_square_closest_to_global.y])
 
-        if self.frame > 5 and self.my_production_sum / self.next_highest_production_sum > 1.1 and np.sum(self.combat_zone_map) > 2 and self.frame % 2 == 0:
-            self.value_production_map = np.ones((self.width, self.height)) * 9999
+        # if self.frame > 5 and self.my_production_sum / self.next_highest_production_sum > 1.1 and np.sum(self.combat_zone_map) > 2:
+            # self.value_production_map = np.ones((self.width, self.height)) * 9999
 
     def update_controlled_influence_production_maps(self):
         max_distance = 9

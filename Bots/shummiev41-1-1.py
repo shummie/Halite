@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v41"
+botname = "shummie v41-1-1"
 strength_buffer = 0
 print_maps = True
 
@@ -353,7 +353,7 @@ class Game:
             # recover_map = self.prod_over_str_avg_map
             # np.savetxt("maps.txt", self.prod_over_str_avg_map)
             recover_map = 1 / np.maximum(self.prod_over_str_avg_map, 0.01)
-            recover_map += np.power(self.distance_from_owned, 0.3)
+            recover_map += np.power(self.distance_from_owned, 0.6)
             print_map(recover_map, "global_square_map")
             tx, ty = np.unravel_index(recover_map.argmin(), (self.width, self.height))
             self.global_max_square = self.squares[tx, ty]
@@ -370,6 +370,7 @@ class Game:
             current = border_square_closest_to_global.vertex
             # logging.debug("frame: " + str(self.frame) + " bx/by: " + str(tx) + "/" + str(ty))
             # logging.debug(str(list(temp_map)))
+            # current = self.global_max_square.vertex
             while current != self.global_max_square.vertex:
                 path.append(current)
                 # current = self.dij_recov_route[border_square_closest_to_global.vertex, current]
@@ -396,6 +397,7 @@ class Game:
 
         avg_recov_threshold = 2
         avg_map_recovery = np.sum(self.strength_map * self.border_map) / np.sum(self.production_map * self.border_map)
+
         self.value_production_map[self.value_production_map > (avg_recov_threshold * avg_map_recovery)] = 9999
 
         if not self.is_neutral_map[self.global_max_square.x, self.global_max_square.y]:
@@ -403,7 +405,7 @@ class Game:
             # recover_map = self.prod_over_str_avg_map
             # np.savetxt("maps.txt", self.prod_over_str_avg_map)
             recover_map = 1 / np.maximum(self.prod_over_str_avg_map, 0.01)
-            recover_map += np.power(self.distance_from_owned, 0.3)
+            recover_map += np.power(self.distance_from_owned, 0.6)
             # np.savetxt("maps.txt", self.distance_from_owned)
             tx, ty = np.unravel_index(recover_map.argmin(), (self.width, self.height))
             self.global_max_square = self.squares[tx, ty]
@@ -430,8 +432,8 @@ class Game:
         avg_cost_to_global -= 4  # Testing various values to weight towards global max.
         self.value_production_map[border_square_closest_to_global.x, border_square_closest_to_global.y] = min(self.total_avg_cost_to_global - 7, avg_cost_to_global, self.value_production_map[border_square_closest_to_global.x, border_square_closest_to_global.y])
 
-        if self.frame > 5 and self.my_production_sum / self.next_highest_production_sum > 1.1 and np.sum(self.combat_zone_map) > 2 and self.frame % 2 == 0:
-            self.value_production_map = np.ones((self.width, self.height)) * 9999
+        # if self.frame > 5 and self.my_production_sum / self.next_highest_production_sum > 1.1 and np.sum(self.combat_zone_map) > 2:
+            # self.value_production_map = np.ones((self.width, self.height)) * 9999
 
     def update_controlled_influence_production_maps(self):
         max_distance = 9
@@ -454,7 +456,6 @@ class Game:
             self.get_moves_attack()
     #        end = time.time()
     #        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
-            self.get_moves_prepare_strength()
             # 2 - Find production zone cells and attack them
     #        start = time.time()
             self.get_moves_production()
@@ -555,11 +556,10 @@ class Game:
         # combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
 
         for square in combat_squares:
-            if (square.strength > square.production * (self.buildup_multiplier[square.x, square.y] + 1)) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+            if (square.strength > square.production * self.buildup_multiplier[square.x, square.y]) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                 # self.move_towards_map(square, self.distance_from_combat_zone)
                 self.move_towards_map_old(square, combat_distance_matrix)
-            # elif square.strength > square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
-            elif square.strength >= square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
+            elif square.strength > square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
                 self.move_towards_map_old(square, combat_distance_matrix)
             else:
                 self.make_move(square, STILL, None)
@@ -606,27 +606,6 @@ class Game:
             random.shuffle(possible_moves)
             possible_moves.sort(key=lambda sq: self.enemy_strength_map[4, sq.x, sq.y], reverse=True)
             self.move_square_to_target(square, possible_moves[0], True)
-
-    def get_moves_prepare_strength(self):
-        # Attempts to build up strength prior to an immediate engagement, only if we aren't already in combat
-        if np.sum(self.combat_zone_map) > 0:
-            return
-
-        border_prepare_indices = np.transpose(np.nonzero(self.border_map * self.enemy_strength_map[1] > 0))
-        enemy_border_squares = [self.squares[c[0], c[1]] for c in border_prepare_indices]
-
-        if len(enemy_border_squares) > 0:
-            combat_distance_matrix = self.friendly_flood_fill_multiple_sources(enemy_border_squares, 5)
-            combat_distance_matrix[combat_distance_matrix == -1] = 0
-            combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
-
-            for square in combat_squares:
-                if self.distance_from_border[square.x, square.y] > 3 and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
-                    self.move_towards_map_old(square, combat_distance_matrix)
-                else:
-                    self.make_move(square, STILL, None)
-
-
 
     def get_moves_production(self):
         # Tries to find the best cells to attack from a production standpoint.
@@ -1176,9 +1155,10 @@ class Game:
                     if n.owner == self.my_id:
                         possible_paths.append((d, n, projected_strength_map[n.x, n.y]))
                     else:
-                        # Try attacking a bordering cell
-                        if square.strength > 2 * n.strength and n.production > 1:
-                            possible_paths.append((d, n, n.strength))
+                        # Do we want to attack a bordering cell? Let's try taking over a cell IF it's next to a combat zone cell.
+                        for n_n in n.neighbors:
+                            if self.enemy_strength_map[1, n_n.x, n_n.y] > 0 and square.strength > n.strength:
+                                possible_paths.append((d, n, n.strength))
 
                 possible_paths.sort(key=lambda x: x[2])
                 # Force a move there
@@ -1192,9 +1172,7 @@ class Game:
                         options_list.append((n, projected_strength_map[n.x, n.y]))
                 options_list.sort(key=lambda x: x[1])
                 # Let's try having the smallest one stay still instead
-                for opt in options_list:
-                    self.make_move(opt[0], STILL, None)
-                # self.make_move(options_list[0][0], STILL, None)
+                self.make_move(options_list[0][0], STILL, None)
 
         return violation_count
 
@@ -1388,19 +1366,6 @@ def game_loop():
     while collision_check < last_collision_check:
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
-
-    collision_check = 998
-    last_collision_check = 999
-    while collision_check < last_collision_check:
-        last_collision_check = collision_check
-        collision_check = game.last_resort_strength_check()
-
-    collision_check = 998
-    last_collision_check = 999
-    while collision_check < last_collision_check:
-        last_collision_check = collision_check
-        collision_check = game.last_resort_strength_check()
-
     game.send_frame()
 
 # #####################
