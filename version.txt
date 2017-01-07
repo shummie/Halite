@@ -1,6 +1,11 @@
 History
 --------
-Version 41 - ?? / ???? - mu: , sigma: - January 6, 2017
+Version 43 - ?? / ???? - mu: , sigma: - January ?, 2017
+
+Version 42 - ?? / ???? - mu: , sigma: - January 6, 2017
+* Don't save maps...
+
+Version 41 - 1302 / 1304 - mu: 6.95, sigma: 2.65 - January 6, 2017
 * Added a new function to build up strength if combat is expected soon. Hopefully will help in small map games
 * Allow attacking into neutral territory to avoid strength collision
 * Hold back expansion when production > 10% of next highest every other frame.
