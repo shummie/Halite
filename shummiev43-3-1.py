@@ -18,7 +18,7 @@ import copy
 # ==============================================================================
 botname = "shummie v43-2-2"
 strength_buffer = 0
-print_maps = True
+print_maps = False
 
 
 def print_map(npmap, name):
@@ -195,7 +195,7 @@ class Game:
         self.total_avg_cost_to_global = 0
         self.pre_combat_threshold = 1
         self.combat_radius = 8
-        self.production_cells_out = 4
+        self.production_cells_out = 2
 
     def update_configs(self):
 
@@ -319,35 +319,42 @@ class Game:
                               [1, 1, 1, 1, 1],
                               [0, 1, 1, 1, 0],
                               [0, 0, 1, 0, 0]])
-        self.pos_area_map_5 = scipy.ndimage.filters.generic_filter(self.prod_over_str_map[0], sum, footprint=diamond_5, mode="wrap")
+        self.pos_area_map_5 = scipy.ndimage.filters.generic_filter(self.prod_over_str_map[0] * self.is_neutral_map, sum, footprint=diamond_5, mode="wrap")
+        self.neutral_area_map_5 = scipy.ndimage.filters.generic_filter(self.is_neutral_map, sum, footprint=diamond_5, mode="wrap")
         print_map(self.pos_area_map, "pos_area")
         print_map(self.pos_area_map_5, "pos_area_5")
 
     def update_value_production_map(self):
-
-        self.value_production_map = (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0) * np.minimum(self.recover_avg_map, self.recover_map[0])
-        # self.value_production_map = (self.border_map - self.combat_zone_map) * self.recover_wtd_map
+        # Only the border cells are given a production value.
+        # Let's not attack cells that will pierce the enemy's border. We have other code to determine if we want to do that.
+        self.value_production_map = (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0) * self.recover_map[0]
+        # Right now we have the raw cost for each border cell. This is how many turns it takes to recover the strength used if we had full strength immediately
+        # Cells that are outside of interested cells are marked as 9999.
         self.value_production_map[self.value_production_map == 0] = 9999
+        # Any cells that won't pay for itself before the end of the game should be ignored.
         turns_left = self.max_turns - self.frame
         recover_threshold = turns_left * 0.6
         self.value_production_map[self.value_production_map > recover_threshold] == 9999
-        bx, by = np.unravel_index(self.value_production_map.argmin(), (self.width, self.height))
+
+        # bx, by = np.unravel_index(self.value_production_map.argmin(), (self.width, self.height))
         # best_cell_value = self.value_production_map[bx, by]
 
         avg_recov_threshold = 2
         avg_map_recovery = np.sum(self.strength_map * self.border_map) / np.sum(self.production_map * self.border_map)
         self.value_production_map[self.value_production_map > (avg_recov_threshold * avg_map_recovery)] = 9999
 
+        # Identify a global square that we should be targeting if we don't have one available.
         if self.global_max_square is None or not self.is_neutral_map[self.global_max_square.x, self.global_max_square.y]:
             # recover_map = self.prod_over_str_avg_map - np.power(self.distance_from_owned, 0.05)
             # recover_map = self.prod_over_str_avg_map
             # np.savetxt("maps.txt", self.prod_over_str_avg_map)
-            recover_map = 1 / np.maximum(self.prod_over_str_avg_map, 0.01)
-            recover_map += np.power(self.distance_from_owned, 0.3)
+            recover_map = 1 / np.maximum(self.pos_area_map_5, 0.01)
+            recover_map += np.power(self.distance_from_owned, 0.3)  # give a penalty for distance.. What's the right amount?
             print_map(recover_map, "global_square_map")
             tx, ty = np.unravel_index(recover_map.argmin(), (self.width, self.height))
             self.global_max_square = self.squares[tx, ty]
-            self.avg_cost_to_global = 0
+            self.total_avg_cost_to_global = 0  # Trigger to reset cost.
+            self.avg_global_recovery = self.pos_area_map_5 / self.neutral_area_map_5
             # logging.debug("global target: x/y " + str(tx) + "/" + str(ty))
 
         # How do we determine the best border square to use?
@@ -371,8 +378,9 @@ class Game:
         avg_cost_to_global -= 3  # Testing various values to weight towards global max.
         self.value_production_map[self.border_square_closest_to_global.x, self.border_square_closest_to_global.y] = min(self.total_avg_cost_to_global - 3, avg_cost_to_global, self.value_production_map[self.border_square_closest_to_global.x, self.border_square_closest_to_global.y])
 
-        if self.frame > 5 and self.my_production_sum / self.next_highest_production_sum > 1.1 and np.sum(self.combat_zone_map) > 2 and self.frame % 2 == 0:
-            self.value_production_map = np.ones((self.width, self.height)) * 9999
+        self.value_production_map[self.value_production_map > (self.total_avg_cost_to_global + (self.pos_area_map_5 / self.neutral_area_map_5) + path_length) * 2] = 9999
+        # if self.frame > 5 and self.my_production_sum / self.next_highest_production_sum > 1.1 and np.sum(self.combat_zone_map) > 2 and self.frame % 2 == 0:
+        #     self.value_production_map = np.ones((self.width, self.height)) * 9999
 
         print_map(self.value_production_map, "value_map")
 
@@ -387,14 +395,13 @@ class Game:
     def get_moves(self):
         # This is the main logic controlling code.
         # Find super high production cells
-        self.get_pre_combat_production()
         # 1 - Find combat zone cells and attack them.
 #        start = time.time()
 
         self.get_moves_attack()
 #        end = time.time()
 #        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
-        self.get_moves_prepare_strength()
+        # self.get_moves_prepare_strength()
         # 2 - Find production zone cells and attack them
 #        start = time.time()
         self.get_moves_production()
@@ -405,21 +412,6 @@ class Game:
         self.get_moves_other()
 #        end = time.time()
 #        logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
-
-    def get_pre_combat_production(self):
-        # In the event we are trying to fight in a very high production zone, reroute some attacking power to expand in this area.
-        potential_targets_indices = np.transpose(np.nonzero(self.border_map - self.combat_zone_map))
-        potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices if (self.recover_wtd_map[c[0], c[1]] < self.pre_combat_threshold)]
-        if len(potential_targets) == 0:
-            return
-
-        potential_targets.sort(key=lambda sq: self.recover_wtd_map[sq.x, sq.y])
-
-        best_target_value = self.recover_wtd_map[potential_targets[0].x, potential_targets[0].y]
-        # anything with X of the best_value target should be considered. Let's set this to 4 right now.
-        while len(potential_targets) > 0 and self.recover_wtd_map[potential_targets[0].x, potential_targets[0].y] <= (best_target_value + 1):
-            target = potential_targets.pop(0)
-            self.attack_cell(target, 2)
 
     def get_moves_attack(self):
         # Attempts to attack all border cells that are in combat
