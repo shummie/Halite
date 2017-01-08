@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v44"
+botname = "shummie v43"
 strength_buffer = 0
 print_maps = False
 
@@ -623,7 +623,7 @@ class Game:
             for square in combat_squares:
                 if self.distance_from_border[square.x, square.y] > 3 and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                     self.move_towards_map_old(square, combat_distance_matrix)
-                elif square.move == -1:
+                else:
                     self.make_move(square, STILL, None)
 
     def get_moves_production(self):

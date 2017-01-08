@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v44"
+botname = "shummie v45-1-1"
 strength_buffer = 0
 print_maps = False
 
@@ -533,7 +533,7 @@ class Game:
     def get_moves_attack(self):
         # Attempts to attack all border cells that are in combat
         potential_targets_indices = np.transpose(np.nonzero(self.combat_zone_map))
-        potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices]
+        potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices if (c[0] + c[1]) % 2 == ((game.frame + 1) % 2)]
         # potential_targets.sort(key = lambda x: self.distance_from_enemy[x.x, x.y])
         potential_targets.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
 

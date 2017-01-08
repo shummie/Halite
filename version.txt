@@ -1,8 +1,17 @@
 History
 --------
-Version 43 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 45 - ?? / ???? - mu: , sigma: - January ?, 2017
+* Rewrite strength collison code
 
-Version 42 - ?? / ???? - mu: , sigma: - January 6, 2017
+Version 44 - ?? / ???? - mu: , sigma: - January 8, 2017
+* Don't overwrite attack moves
+
+Version 43 - 730 / 1310 - mu: 29.5, sigma: 0.83 - January 8, 2017
+* Remove the 10% production thing again
+* Allow buildup across all borders. let's see how this works
+* Minor tweaks
+
+Version 42 - 5 / 1310 - mu: 51.02, sigma: 0.67 - January 6, 2017
 * Don't save maps...
 
 Version 41 - 1302 / 1304 - mu: 6.95, sigma: 2.65 - January 6, 2017
