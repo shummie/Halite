@@ -1,9 +1,13 @@
 History
 --------
 Version 45 - ?? / ???? - mu: , sigma: - January ?, 2017
-* Rewrite strength collison code
+* Rewrite strength collision code
+* Dijkstra pathfinding with production for internal movement
+* Enforce parity when attacking
+* Really fix the 10% overstrength thing.
+* New heuristic to determine if it's worth pursuing the global maximum
 
-Version 44 - ?? / ???? - mu: , sigma: - January 8, 2017
+Version 44 - 3 / 1320 - mu: 51.79, sigma: 0.68 - January 8, 2017
 * Don't overwrite attack moves
 
 Version 43 - 730 / 1310 - mu: 29.5, sigma: 0.83 - January 8, 2017

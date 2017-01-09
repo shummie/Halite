@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v45"
+botname = "shummie v45-7-1"
 strength_buffer = 0
 print_maps = False
 
@@ -501,7 +501,7 @@ class Game:
             self.get_moves_attack()
     #        end = time.time()
     #        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
-            # self.get_moves_prepare_strength()
+            self.get_moves_prepare_strength()
             # 2 - Find production zone cells and attack them
     #        start = time.time()
             self.get_moves_production()

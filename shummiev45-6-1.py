@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v45"
+botname = "shummie v45-6-1"
 strength_buffer = 0
 print_maps = False
 
@@ -208,7 +208,7 @@ class Game:
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         self.pre_combat_threshold = -3
         self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)
+        self.production_cells_out = 4
         self.phase = 0
         # Find the "global max"
         self.global_max_square = None
@@ -222,7 +222,7 @@ class Game:
         self.combat_radius = 8
 
         if np.sum(self.combat_zone_map) > 3:
-            self.production_cells_out = int(self.width / self.starting_player_count / 2.5)
+            self.production_cells_out = 3
 
         if self.percent_owned > 0.6:
             self.buildup_multiplier -= 1

@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v45"
+botname = "shummie v45-5-3"
 strength_buffer = 0
 print_maps = False
 
@@ -586,9 +586,9 @@ class Game:
 
         # TODO: Should sort by amount of overkill damage possible.
         for square in potential_targets:
-            if (square.x + square.y) % 2 == game.frame % 2:
+            #if (square.x + square.y) % 2 == game.frame % 2:
                 # Off parity square. don't force an attack.
-                continue
+            #    continue
             self.attack_cell(square, 1)
 
         self.get_moves_breakthrough()
