@@ -8,6 +8,7 @@ import math
 import numpy as np
 import random
 import scipy.sparse
+import scipy.ndimage.filters
 import sys
 import time
 import copy
@@ -128,7 +129,7 @@ class Game:
                 self.squares[x, y].after_init_update()
 
     def create_one_time_maps(self):
-        self.distance_map = self.create_distance_map()
+        # self.distance_map = self.create_distance_map()
         self.distance_map_no_decay = self.create_distance_map(1)
 
         self.production_map_01 = np.maximum(self.production_map, 0.1)
@@ -136,8 +137,10 @@ class Game:
 
         self.strength_map_01 = np.maximum(self.strength_map, 0.1)
         self.strength_map_1 = np.maximum(self.strength_map, 1)
-
+        # start = time.time()
         self.create_dijkstra_maps()
+        # end = time.time()
+        # logging.debug("Creating dijkstra maps: " + str(end - start))
 
     def create_dijkstra_maps(self):
         def get_cost_recov(cellnum):
@@ -151,12 +154,18 @@ class Game:
             return (self.production_map_1[x, y] // 2 + 1)
 
         self.do_prod_dij = True
-        if min(self.width, self.height) >= 43:
+        if min(self.width, self.height) >= 40:
             self.do_prod_dij = False
 
         dij_recov_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
         dij_prod_costs = scipy.sparse.dok_matrix((self.width * self.height, self.width * self.height))
 
+        # for square in itertools.chain.from_iterable(self.squares):
+        #     for d in range(0, 4):
+        #         n = square.neighbors[d]
+        #         dij_recov_costs[square.vertex, n.vertex] = cost_recov[n.x, n.y]
+        #         dij_prod_costs[square.vertex, n.vertex] = cost_prod[n.x, n.y]
+        # start = time.time()
         for x in range(self.width):
             for y in range(self.height):
                 coord = x * self.height + y
@@ -172,6 +181,9 @@ class Game:
                     dij_prod_costs[coord, ((x + 0) % self.width) * self.height + ((y + 1) % self.height)] = get_cost_prod(((x + 0) % self.width) * self.height + ((y + 1) % self.height))
                     dij_prod_costs[coord, ((x + 0) % self.width) * self.height + ((y - 1) % self.height)] = get_cost_prod(((x + 0) % self.width) * self.height + ((y - 1) % self.height))
 
+        # end = time.time()
+        # logging.debug("init dijkstra dok maps: " + str(end - start))
+        # start = time.time()
         self.dij_recov_cost, self.dij_recov_route = scipy.sparse.csgraph.dijkstra(dij_recov_costs, return_predecessors=True)
         self.dij_recov_distance_map = np.zeros((self.width, self.height, self.width, self.height))
         self.dij_recov_route_map = np.zeros((self.width, self.height, self.width, self.height))
@@ -181,6 +193,9 @@ class Game:
             self.dij_prod_distance_map = np.zeros((self.width, self.height, self.width, self.height))
             self.dij_prod_route_map = np.zeros((self.width, self.height, self.width, self.height))
 
+        # end = time.time()
+        # logging.debug("running dijkstra maps: " + str(end - start))
+        # start = time.time()
         for x in range(self.width):
             for y in range(self.height):
                 self.dij_recov_distance_map[x, y, :, :] = self.dij_recov_cost[x * self.height + y].reshape((self.width, self.height))
@@ -188,6 +203,8 @@ class Game:
                 if self.do_prod_dij:
                     self.dij_prod_distance_map[x, y, :, :] = self.dij_recov_cost[x * self.height + y].reshape((self.width, self.height))
                     self.dij_prod_route_map[x, y, :, :] = self.dij_recov_route[x * self.height + y].reshape((self.width, self.height))
+        # end = time.time()
+        # logging.debug("reshape dijkstra maps: " + str(end - start))
 
     def create_distance_map(self, falloff=1):
         # Creates a distance map so that we can easily divide a map to get ratios that we are interested in
@@ -259,14 +276,14 @@ class Game:
         self.update_enemy_maps()
         # end = time.time()
         # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
-        start = time.time()
+        # start = time.time()
         self.update_recover_maps()
-        end = time.time()
-        logging.debug("update_recover Frame: " + str(game.frame) + " : " + str(end - start))
-        start = time.time()
+        # end = time.time()
+        # logging.debug("update_recover Frame: " + str(game.frame) + " : " + str(end - start))
+        # start = time.time()
         self.update_value_maps()
-        end = time.time()
-        logging.debug("update_value_maps Frame: " + str(game.frame) + " : " + str(end - start))
+        # end = time.time()
+        # logging.debug("update_value_maps Frame: " + str(game.frame) + " : " + str(end - start))
 
         if self.phase == 0:
             # Mid-game triggers when we are either a few squares away from an enemy, or we have reached our trigger square
@@ -276,7 +293,11 @@ class Game:
                 self.early_game_value_map()
         if self.phase > 0:
             self.update_value_production_map()
+
+        # start = time.time()
         self.update_controlled_influence_production_maps()
+        # end = time.time()
+        # logging.debug("update_controlled_influence_production_maps Frame: " + str(game.frame) + " : " + str(end - start))
 
     def update_calc_maps(self):
         self.strength_map_01 = np.maximum(self.strength_map, 0.1)
@@ -353,7 +374,7 @@ class Game:
         for distance in range(1, max_distance + 1):
             self.prod_over_str_map[distance] = spread_n(self.prod_over_str_map[distance - 1], 1)
             self.prod_over_str_map[distance][self.prod_over_str_map[distance - 1] == 0] = 0
-            self.prod_over_str_map[distance] = self.prod_over_str_map[distance] / 5
+            self.prod_over_str_map[distance] /= 5
             # self.recover_map[distance] = 1 / np.maximum(self.prod_over_str_map[distance], 0.01)
 
         self.prod_over_str_max_map = np.apply_along_axis(np.max, 0, self.prod_over_str_map)
@@ -372,31 +393,47 @@ class Game:
 
     def update_value_maps(self):
         self.base_value_map = np.divide(self.strength_map, self.production_map_01) * (self.is_neutral_map - self.combat_zone_map)
+        self.base_value_map[self.base_value_map == 0] = 100
         self.value_map = np.zeros((self.width, self.height))
         cells_out = 5
         num_cells = cells_out * (cells_out + 1) * 2 + 1
-        start = time.time()
-        for x in range(self.width):
-            for y in range(self.height):
-                if self.is_neutral_map[x, y]:
-                    self.value_map += (self.distance_map_no_decay[x, y] + self.base_value_map[x, y]) * (self.distance_map_no_decay[x, y] <= cells_out)
-                else:
-                    self.value_map += (self.distance_map_no_decay[x, y] + 100) * (self.distance_map_no_decay[x, y] <= cells_out)
-                # Add in the cost to get to each square.
-        end = time.time()
-        logging.debug("valueinit: " + str(end - start))
+        # start = time.time()
+        diamond_5 = np.array([[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                              [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0],
+                              [0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
+                              [0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+                              [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                              [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                              [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                              [0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+                              [0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
+                              [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0],
+                              [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]])
+        self.value_map = scipy.ndimage.filters.generic_filter(self.base_value_map, sum, footprint=diamond_5, mode="wrap")
+        self.value_map += 216
+        self.value_map /= num_cells
+
+        # for x in range(self.width):
+        #     for y in range(self.height):
+        #         if self.is_neutral_map[x, y]:
+        #             self.value_map += (self.distance_map_no_decay[x, y] + self.base_value_map[x, y]) * (self.distance_map_no_decay[x, y] <= cells_out)
+        #         else:
+        #             self.value_map += (self.distance_map_no_decay[x, y] + 100) * (self.distance_map_no_decay[x, y] <= cells_out)
+        # Add in the cost to get to each square.
+        # end = time.time()
+        # logging.debug("valueinit: " + str(end - start))
         self.global_search_map = np.copy(self.value_map)
 
-        self.value_map /= num_cells
-        start = time.time()
-        for x in range(self.width):
-            for y in range(self.height):
-                temp_map = self.dij_recov_distance_map[x, y] * (self.is_owned_map == 1)
-                temp_map[temp_map == 0] = 9999
-                tx, ty = np.unravel_index(temp_map.argmin(), (self.width, self.height))
-                self.global_search_map[x, y] += self.dij_recov_distance_map[x, y, tx, ty]
-        end = time.time()
-        logging.debug("addpath: " + str(end - start))
+
+        # start = time.time()
+        temp_map = self.dij_recov_distance_map * (self.is_owned_map == 1)
+        temp_map[temp_map == 0] = 9999
+
+        temp_map = np.amin(temp_map, (2, 3))
+        self.global_search_map += temp_map
+
+        # end = time.time()
+        # logging.debug("addpath: " + str(end - start))
         print_map(self.value_map, "value_map_")
         print_map(self.global_search_map, "global_search_map_")
 
@@ -491,7 +528,6 @@ class Game:
             self.total_avg_cost_to_global = avg_cost_to_global
         avg_cost_to_global -= 4  # Testing various values to weight towards global max.
         self.value_production_map[border_square_closest_to_global.x, border_square_closest_to_global.y] = min(self.total_avg_cost_to_global - 4, avg_cost_to_global, self.value_production_map[border_square_closest_to_global.x, border_square_closest_to_global.y])
-
 
     def update_controlled_influence_production_maps(self):
         max_distance = 9
@@ -1388,12 +1424,19 @@ def spread_n(M, n, decay=0, include_self=True):
     else:
         spread_map = np.zeros_like(M)
     distance = 1
-    while distance <= n:
-        combos = get_all_d_away(distance)
-        decay_factor = math.exp(-decay * distance)
-        for c in combos:
-            spread_map += roll_xy(np.multiply(decay_factor, M), c[0], c[1])
-        distance += 1
+    if decay != 0:
+        while distance <= n:
+            combos = get_all_d_away(distance)
+            decay_factor = math.exp(-decay * distance)
+            for c in combos:
+                spread_map += roll_xy(np.multiply(decay_factor, M), c[0], c[1])
+            distance += 1
+    else:  # decay = 0
+        while distance <= n:
+            combos = get_all_d_away(distance)
+            for c in combos:
+                spread_map += roll_xy(M, c[0], c[1])
+            distance += 1
     return spread_map
 
 

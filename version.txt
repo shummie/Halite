@@ -1,6 +1,10 @@
 History
 --------
-Version 45 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 46 - ?? / ???? - mu: , sigma: - January ?, 2017
+* Rewrite global vs local heuristic with numpy functions to fix timeout issues
+* Only use dijkstra production travel on maps less than 40x40 due to timeout issues
+
+Version 45 - ?? / ???? - mu: , sigma: - January 9, 2017
 * Rewrite strength collision code
 * Dijkstra pathfinding with production for internal movement
 * Enforce parity when attacking
