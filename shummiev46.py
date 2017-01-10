@@ -410,7 +410,7 @@ class Game:
                               [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0],
                               [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]])
         self.value_map = scipy.ndimage.filters.generic_filter(self.base_value_map, sum, footprint=diamond_5, mode="wrap")
-        self.value_map += 216
+        self.value_map += 221
         self.value_map /= num_cells
 
         # for x in range(self.width):
