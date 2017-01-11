@@ -1,7 +1,10 @@
 History
 --------
 Version 47 - ?? / ???? - mu: , sigma: - January ?, 2017
-
+* Utilize new heuristic (similar to global search) for general search
+* Try to smooth out hanging around borders to lessen overkill
+* Expand production range search
+* Reduce combat range & combat bonus for moving squares
 
 Version 46 - ?? / ???? - mu: , sigma: - January 10, 2017
 * Rewrite global vs local heuristic with numpy functions to fix timeout issues
