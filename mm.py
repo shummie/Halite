@@ -24,13 +24,12 @@ import shutil
 import skills
 from skills import trueskill
 from subprocess import Popen, PIPE, call
-#from keyboard_detection import keyboard_detection
 
 
-halite_command = "halite"
+halite_command = "./halite"
 replay_dir = "replays"
-db_filename = "db.sqlite3"
-browser_binary = "chrome"
+# db_filename is now specified at command line, with the default set to "db.sqlite3"
+browser_binary = "firefox"
 
 def max_match_rounds(width, height):
     return math.sqrt(width * height) * 10.0
@@ -96,7 +95,10 @@ class Match:
             print("Keeping replay\n")
             if not os.path.exists(replay_dir):
                 os.makedirs(replay_dir)
-            shutil.move(self.replay_file, replay_dir)
+            try:
+                shutil.move(self.replay_file, replay_dir)
+            except Exception as e:
+                print(e)
         else: 
             print("Deleting replay\n")
             os.remove(self.replay_file)
@@ -106,7 +108,7 @@ class Match:
         if len(lines) < (2 + (2 * self.num_players)):
             raise ValueError("Not enough lines in match output")
         else:
-            del lines[self.num_players]
+            del lines[self.num_players]  # delete size line
             for count, line in enumerate(lines):
                 if count == self.num_players: # replay file and seed
                     self.replay_file = line.split(" ")[0]
@@ -121,7 +123,7 @@ class Match:
 
 
 class Manager:
-    def __init__(self, halite_binary, players=None, rounds=-1):
+    def __init__(self, halite_binary, db_filename, players=None, rounds=-1):
         self.halite_binary = halite_binary
         self.players = players
         self.players_min = 2
@@ -130,7 +132,7 @@ class Manager:
         self.keep_replays = True
         self.priority_sigma = True
         self.exclude_inactive = False
-        self.db = Database()
+        self.db = Database(db_filename)
 
     def run_round(self, contestants, width, height, seed):
         m = Match(contestants, width, height, seed, 2 * len(contestants) * max_match_rounds(width, height), self.keep_replays)
@@ -162,16 +164,32 @@ class Manager:
         return contestants
 
 
-    def run_rounds(self):
-        while ((self.rounds < 0) or (self.round_count < self.rounds)):
-            num_contestants = random.choice([2] * 5 + [3] * 4 + [4] * 3 + [5] * 2 + [6])
-            contestants = self.pick_contestants(num_contestants)
-            size_w = random.choice([20, 25, 25] + [30] * 3 + [35] * 4 + [40] * 3 + [45, 45, 50])
-            size_h = size_w
-            seed = random.randint(10000, 2073741824)
-            print ("\n------------------- running new match... -------------------\n")
-            self.run_round(contestants, size_w, size_h, seed)
-            self.round_count += 1
+    def run_rounds(self, player_dist, map_dist):
+        # try:
+        #     self.run_rounds_unix(player_dist, map_dist)
+        # except ImportError:
+        self.run_rounds_windows(player_dist, map_dist)
+
+    # def run_rounds_unix(self, player_dist, map_dist):
+    #     from keyboard_detection import keyboard_detection
+    #     with keyboard_detection() as key_pressed:
+    #         while not key_pressed() and ((self.rounds < 0) or (self.round_count < self.rounds)):
+    #             self.setup_round(player_dist, map_dist)
+
+    def run_rounds_windows(self, player_dist, map_dist):
+        import msvcrt
+        while not  msvcrt.kbhit()and ((self.rounds < 0) or (self.round_count < self.rounds)):
+            self.setup_round(player_dist, map_dist)
+
+    def setup_round (self, player_dist, map_dist):
+        num_contestants = random.choice(player_dist)
+        contestants = self.pick_contestants(num_contestants)
+        size_w = random.choice(map_dist)
+        size_h = size_w
+        seed = random.randint(10000, 2073741824)
+        print ("\n------------------- running new match... -------------------\n")
+        self.run_round(contestants, size_w, size_h, seed)
+        self.round_count += 1
 
     def add_player(self, name, path):
         p = self.db.get_player((name,))
@@ -180,20 +198,31 @@ class Manager:
         else:
             print ("Bot name %s already used, no bot added" %(name))
 
+    def edit_path(self, name, path):
+        p = self.db.get_player((name,))
+        if not p:
+            print ('Bot name %s not found, no edits made' %(name))
+        else:
+            p = parse_player_record(p[0])
+            print ("Updating path for bot %s" % (name))
+            print ("Old path: %s" % p.path)
+            print ("New path: %s" % path)
+            self.db.update_player_path(name, path)
+
 
     def show_ranks(self, tsv=False):
         print()
         if tsv:
             print ("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % ("name", "last_seen", "rank", "skill", "mu", "sigma", "ngames", "active"))
         else:
-            print ("%s\t\t%s\t\t%s\t%s\t\t%s\t\t%s\t\t%s\t%s" % ("name", "last_seen", "rank", "skill", "mu", "sigma", "ngames", "active"))
+            print ("{:<25}{:<20}{:^6}  {:^10}{:^10}{:^10}{:^8}{:^8}    {:<30}".format("name", "last_seen", "rank", "skill", "mu", "sigma", "ngames", "active", "path"))
         sql = "select * from players where active > 0 order by skill desc" if self.exclude_inactive else "select * from players order by skill desc"
         for p in self.db.retrieve(sql):
             print(str(parse_player_record(p)))
 
             
 class Database:
-    def __init__(self, filename=db_filename):
+    def __init__(self, filename):
         self.db = sqlite3.connect(filename)
         self.recreate()
 
@@ -238,8 +267,8 @@ class Database:
         game_id = int(game_id) + 1 if game_id else 1
         self.update_many("INSERT INTO games (game_id, name, finish, field_size, map_size, map_seed, timestamp, replay_file) VALUES (?,?,?,?,?,?,?,?)", [(game_id, player.name, rank, match.num_players, match.width, match.map_seed, self.now(), match.replay_file) for player, rank in zip(match.players, match.results)])
 
-    def add_player(self, name, path):
-        self.update("insert into players values(?,?,?,?,?,?,?,?,?,?)", (None, name, path, self.now(), 1000, 0.0, 25.0, 25.0/3.0, 0, True))
+    def add_player(self, name, path, active=True):
+        self.update("insert into players values(?,?,?,?,?,?,?,?,?,?)", (None, name, path, self.now(), 1000, 0.0, 25.0, 25.0/3.0, 0, active))
 
     def delete_player(self, name):
         self.update("delete from players where name=?", [name])
@@ -253,7 +282,7 @@ class Database:
 
     def update_player_skill(self, name, skill, mu, sigma ):
         self.update("update players set ngames=ngames+1,lastseen=?,skill=?,mu=?,sigma=? where name=?", (self.now(), skill, mu, sigma, name))
-	
+
     def update_player_rank( self, name, rank ):
         self.update("update players set rank=? where name=?", (rank, name))
 
@@ -266,6 +295,21 @@ class Database:
 
     def deactivate_player(self, name):
         self.update("update players set active=? where name=?", (0, name))
+
+    def update_player_path(self, name, path):
+        self.update("update players set path=? where name=?", (path, name))
+
+    def reset(self, filename):
+            players = list(map(parse_player_record, self.retrieve('select * from players')))
+            assert players, 'No players recovered from database?  Reset aborted.'
+            # blow out database
+            self.db.close()
+            os.remove(filename)
+            self.db = sqlite3.connect(filename)
+            self.recreate()
+            for player in players:
+                self.add_player(player.name, player.path, player.active)
+
 
 
 class Player:
@@ -281,7 +325,7 @@ class Player:
         self.active = active
 
     def __repr__(self):
-        return "%s\t%s\t%d\t%3f\t%3f\t%3f\t%d\t%d" % (self.name, self.last_seen, self.rank, self.skill, self.mu, self.sigma, self.ngames, self.active)
+        return "{:<25}{:<20}{:^6}{:10.4f}{:10.4f}{:10.4f}   {:>5} {:>5}        {:<30}".format(self.name, str(self.last_seen), self.rank, self.skill, self.mu, self.sigma, self.ngames, self.active, self.path)
 
     def update_skill(self):
         self.skill = self.mu - (self.sigma * 3)
@@ -293,7 +337,7 @@ def parse_player_record (player):
 
 class Commandline:
     def __init__(self):
-        self.manager = Manager(halite_command)
+        #self.manager is created after we know the db_filename, so first two lines of Commandline.act() method
         self.cmds = None
         self.parser = argparse.ArgumentParser()
         self.no_args = False
@@ -349,6 +393,31 @@ class Commandline:
                                  action = "store_true", default = False,
                                  help = "Exclude inactive bots from ranking table")
 
+        self.parser.add_argument('--reset', dest='reset',
+                                 action = 'store_true', default = False,
+                                 help = 'Delete ALL information in the database, then recreate a new one with existing bot names and paths')
+
+        self.parser.add_argument('--db','--database', dest='db_filename',
+                                 action = "store", default = "db.sqlite3",
+                                 help = 'Specify the database filename')
+
+        self.parser.add_argument('--edit', dest = 'editBot',
+                                 action = 'store', default = '',
+                                 help = 'Edit the path of the named bot')
+
+        self.parser.add_argument('--playerdist', '--player-dist', '--player_dist', dest = 'player_dist',
+                                 nargs='*', action = 'store', default = None,
+                                 type = int, choices= (2,3,4,5,6),
+                                 help = 'Specify a custom distribution of players per match')
+
+        self.parser.add_argument('--nonseeddist', '--non-seed-dist', '--non_seed_dist', dest = 'seed_dist',
+                                action = 'store_false', default=True,
+                                help = 'Use the distribution of player counts experienced by non-seed players')
+
+        self.parser.add_argument('--mapdist', '--map-dist', '--map_dist', dest = 'map_dist', type = int,
+                                nargs ='*', action = 'store', default = [20, 25, 25] + [30] * 3 + [35] * 4 + [40] * 3 + [45, 45, 50],
+                                help = 'Specify a custom distribution of (square) map sizes.')
+
     def parse(self, args):
         self.no_args = not args
         self.cmds = self.parser.parse_args(args)
@@ -371,9 +440,12 @@ class Commandline:
         else:
             self.manager.players = players
             self.manager.rounds = rounds
-            self.manager.run_rounds()
+            self.manager.run_rounds(self.cmds.player_dist, self.cmds.map_dist)
 
     def act(self):
+        print ('Using database %s' % self.cmds.db_filename)
+        self.manager = Manager(halite_command, self.cmds.db_filename)
+
         if self.cmds.deleteReplays:
             print("keep_replays = False")
             self.manager.keep_replays = False
@@ -386,12 +458,23 @@ class Commandline:
             print("exclude_inactive = True")
             self.manager.exclude_inactive = True
 
+        if self.cmds.player_dist is None:
+            self.cmds.player_dist = [2] * 5 + [3] * 4 + [4] * 3 + [5] * 2 + [6] if self.cmds.seed_dist else [2] * 5 + [3] * 8 + [4] * 9 + [5] * 8 + [6] * 5
+        print ('Using player distribution %s' % str(self.cmds.player_dist))
+        print ('Using map distribution %s' % str(self.cmds.map_dist))
+
         if self.cmds.addBot:
             print("Adding new bot...")
             if self.cmds.botPath == "":
                 print ("You must specify the path for the new bot")
             elif self.valid_botfile(self.cmds.botPath):
                 self.add_bot(self.cmds.addBot, self.cmds.botPath)
+
+        elif self.cmds.editBot:
+            if not self.cmds.botPath:
+                print ("You must specify the new path for the bot")
+            elif self.valid_botfile(self.cmds.botPath):
+                self.manager.edit_path(self.cmds.editBot, self.cmds.botPath)
         
         elif self.cmds.deleteBot:
             print("Deleting bot...")
@@ -422,6 +505,19 @@ class Commandline:
         elif self.cmds.forever:
             print ("Running matches until interrupted. Press any key to exit safely at the end of the current match.")
             self.run_matches(-1)
+
+        elif self.cmds.reset:
+            print('You want to reset the database.  This is IRRECOVERABLE.  Make a backup first.')
+            print('The existing bots names, paths, and activation status will be saved.')
+            print('Then, the database will be DELETED.')
+            print('A new, empty database will be created in its place using the same filename.')
+            print('Finally, the saved bots will be added as new bots (ie names, paths and activation statuses only) in the new database.')
+            ok = input('Type YES to continue: ')
+            if ok == 'YES':
+                self.manager.db.reset(self.cmds.db_filename)
+                print ('Database reset completed.')
+            else:
+                print('Database reset aborted.  No changes made.')
         
         elif self.no_args:
             self.parser.print_help()
@@ -440,7 +536,6 @@ def view_replay(filename):
             f.write(html)
     call ([browser_binary, output_filename])
 
-    
 
 cmdline = Commandline()
 cmdline.parse(sys.argv[1:])
