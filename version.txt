@@ -1,10 +1,14 @@
 History
 --------
-Version 46 - ?? / ???? - mu: , sigma: - January ?, 2017
-* Rewrite global vs local heuristic with numpy functions to fix timeout issues
-* Only use dijkstra production travel on maps less than 40x40 due to timeout issues
+Version 47 - ?? / ???? - mu: , sigma: - January ?, 2017
 
-Version 45 - ?? / ???? - mu: , sigma: - January 9, 2017
+
+Version 46 - ?? / ???? - mu: , sigma: - January 10, 2017
+* Rewrite global vs local heuristic with numpy functions to fix timeout issues
+* Only use dijkstra production travel on maps less than 45x45 due to timeout issues
+* Removed buildup across borders (should we add this back in?)
+
+Version 45 - 9 / 1324 - mu: 48.47, sigma: 0.7 - January 9, 2017
 * Rewrite strength collision code
 * Dijkstra pathfinding with production for internal movement
 * Enforce parity when attacking
@@ -28,7 +32,7 @@ Version 41 - 1302 / 1304 - mu: 6.95, sigma: 2.65 - January 6, 2017
 * Hold back expansion when production > 10% of next highest every other frame.
  
 Version 40 - 7 / 1304 - mu: 50.86, sigma: 0.72 - January 6, 2017
-* Fix a bug, didn't completely revert an experiement
+* Fix a bug, didn't completely revert an experiment
 
 Version 39 - 12 / 1303 - mu: 48.74, sigma: 0.88 - January 6, 2017
 * Change production 0 cells to 0.1 from 1 for Dijkstra calculations
