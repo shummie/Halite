@@ -1,12 +1,12 @@
 History
 --------
-Version 47 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 47 - ?? / ???? - mu: , sigma: - January 11, 2017
 * Utilize new heuristic (similar to global search) for general search
 * Try to smooth out hanging around borders to lessen overkill
 * Expand production range search
 * Reduce combat range & combat bonus for moving squares
 
-Version 46 - ?? / ???? - mu: , sigma: - January 10, 2017
+Version 46 - 4 / 1338 - mu: 51, sigma: 0.68 - January 10, 2017
 * Rewrite global vs local heuristic with numpy functions to fix timeout issues
 * Only use dijkstra production travel on maps less than 45x45 due to timeout issues
 * Removed buildup across borders (should we add this back in?)
@@ -33,7 +33,7 @@ Version 41 - 1302 / 1304 - mu: 6.95, sigma: 2.65 - January 6, 2017
 * Added a new function to build up strength if combat is expected soon. Hopefully will help in small map games
 * Allow attacking into neutral territory to avoid strength collision
 * Hold back expansion when production > 10% of next highest every other frame.
- 
+
 Version 40 - 7 / 1304 - mu: 50.86, sigma: 0.72 - January 6, 2017
 * Fix a bug, didn't completely revert an experiment
 
@@ -158,7 +158,7 @@ Version 10.0 - 611 / 955 - December 10, 2016
 
 Version 9.0 - 78 / 955 - December 9, 2016
 * Added a separate early game heuristic
-* Changed the overstrength code to occur when attempting to move to a target. 
+* Changed the overstrength code to occur when attempting to move to a target.
 * Attempts to chain when using the move_to_target overstrength code.
 * Tweaks to parameters. This will take a lot more future work to enhance.
 
@@ -167,8 +167,8 @@ Version 8.0 - 93 / 939 - December 7, 2016
 
 Version 7.0 - 143 / 906 - December 7, 2016
 * MAJOR CODE REWRITE!
-* Complete code refactoring. 
-  Square is a class that contains information on a square. 
+* Complete code refactoring.
+  Square is a class that contains information on a square.
   GameMap contains all functions related to the game
 * Utilize numpy for a lot of information storage. Adopt some clever tricks from Declan.
 * Complete overhaul of the AI Engine. Older version had each cell evaluate what the best move was and then have it greedily perform the move. A coordinator then tries to prevent pieces from clashing.
@@ -183,9 +183,9 @@ Version 5.0 - 65 / 853 - December 3, 2016
 * heuristic function changes:
   Tries not to overvalue expanding into cells bordering enemy territory too much.
   Don't try to capture territory which is already being taken over.
-  
+
 Version 4.0 - 73 / 848 - December 3, 2016
-* move_to_target: old implementation might move into uncontrolled territory. Not good. 
+* move_to_target: old implementation might move into uncontrolled territory. Not good.
   New implementation moves only though adjacent owned territory, if possible. If multiple routes exist, then it takes the direction with the lowest production.
 * consolidate_strength: Split into two subroutines. One which is the old multi-attacker into a cell, the other looks outwards to gather strength to attack a cell.
 
@@ -193,11 +193,11 @@ Version 3.0 - 74 / 848 - December 3, 2016
 * Failed compilation - skip version
 
 Version 2.0 - 74 / 848 - December 2, 2016
-* Moved hlt file to single file. 
+* Moved hlt file to single file.
 * consolidate_strength: Completely rewritten. Searches all border tiles and then sees if we can consolidate. Ranked by production strength, then sees if we can consolidate.
 * find_nearest_enemy_direction: Calculate ALL distances, and pick the shortest with lowest production if there is a tie. Otherwise, pick randomly.
 * heuristic: look at not just the cell but adjacent cells to determine the value of capturing the cell.
-* smallest strength cells move first. 
+* smallest strength cells move first.
 
 Version 1.0 - 136 / 828 - December 1, 2016
 * First attempt at something that's better than the basic tutorial bots
