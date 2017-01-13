@@ -11,7 +11,7 @@ import (
     "strconv"
 )
 
-var botname = "shummie v48-1-1"
+var botname = "shummie v48-1-1-Go"
 
 type Square struct {
     X, Y int
@@ -22,7 +22,7 @@ type Square struct {
     Game *Game
     North, South, East, West *Square
     Neighbors []*Square
-    MovingHere []*Square
+    MovingHere map[int]*Square
     Move int
     ResetStatus bool
 }
@@ -41,7 +41,8 @@ const (
 type Game struct {
     Width, Height int
     MyID, StartingPlayerCount float64
-    MaxTurns float64
+    MaxTurns, TurnsLeft float64
+    PercentOwned float64
     Buildup float64
     MoveMap [][]float64
     ProductionMap, StrengthMap, OwnerMap [][]float64
@@ -103,7 +104,6 @@ func NewGame() Game {
     fmt.Println(botname)
 
     return game
-
 }
 
 func (g *Game) getFrame() {
@@ -116,7 +116,7 @@ func (g *Game) getFrame() {
     // The above repeats until the COUNTER total is equal to the area of the map.
     // It fills in the map from row 1 to row Height and within a row from column 1 to column Width.
     // Please be aware that the top row is the first row, as Halite uses screen-type coordinates.
-    splitString := strings.Split(g.getString(), " ")
+    splitString := strings.Split(mapString, " ")
 
 
     var x, y, owner, counter int
@@ -144,7 +144,6 @@ func (g *Game) getFrame() {
     }
 
     g.Frame += 1
-
 }
 
 func (g *Game) setConfigs() {
@@ -196,7 +195,7 @@ func (g *Game) createDistanceMap(decay float64) [][][][]float64 {
 func (g *Game) update() {
     g.updateMaps()
     g.updateStats()
-    g.updateConfigs()
+    // g.updateConfigs()
 }
 
 func (g *Game) updateMaps() {
@@ -253,7 +252,6 @@ func (g *Game) updateDistanceMaps() {
     g.DistanceFromBorder = g.floodFill(borderSquares, 999, true)
     g.DistanceFromOwned = g.floodFill(ownedSquares, 999, false)
     g.DistanceFromCombat = g.floodFill(combatSquares, 999, true)
-
 }
 
 func (g *Game) updateBorderMaps() {
@@ -277,7 +275,62 @@ func (g *Game) updateBorderMaps() {
     }
 }
 
+func (g *Game) updateStats() {
+    g.TurnsLeft = g.MaxTurns - float64(g.Frame)
+    g.PercentOwned = Sum2d(g.IsOwnedMap) / float64(g.Width * g.Height)
+}
 
+func (g *Game) getMoves() {
+    // Main logic controlling code
+
+    g.eachSquareMoves()
+}
+
+func (g *Game) eachSquareMoves() {
+    // Each square decides on their own whether or not to move.
+    // For now, let's just loop through the list of squares to determine who moves
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            square := g.Squares[x][y]
+            if square.Owner == g.MyID && square.Move == -1 {
+                // Check distance from border
+                if g.DistanceFromBorder[x][y] == 1 {
+                    // We're at a border, check if we can attack a cell
+                    for d, n := range square.Neighbors {
+                        if n.Owner != g.MyID && square.Strength > n.Strength {
+                            g.makeMove(square, d)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func (g *Game) makeMove(square Square, d int) {
+    g.MoveMap[square.X][square.Y] = float64(d)
+
+    if d == -1 {
+        // Reset the square move
+        if square.Target != nil {
+            delete(square.Target.MovingHere, square.Vertex)
+            square.Target = nil
+        }
+        square.Move = -1
+        return
+    }
+    if square.Move != -1 {
+        if square.Target != nil {
+            delete(square.Target.MovingHere, square.Vertex)
+            square.Target = nil
+        }
+    }
+    square.Move = d
+    if d != 4 {
+        square.Target = square.Neighbors[d]
+        square.Target.MovingHere[square.Vertex] = &square
+    }
+}
 
 func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bool) [][]float64 {
     // Returns a [][]int that contains the distance to the source through friendly squares only.
@@ -307,7 +360,7 @@ func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bo
                 if (friendly_only && n.Owner == g.MyID) || (!friendly_only && n.Owner != g.MyID) {
                     distanceMap[n.X][n.Y] = currentDistance + 1
                     if currentDistance < maxDistance - 1 {
-                        q := append(q, *n)
+                        q = append(q, *n)
                     }
                 }
             }
@@ -315,7 +368,6 @@ func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bo
     }
     return distanceMap
 }
-
 
 func roll_xy(mat [][]float64, ox int, oy int ) [][]float64 {
     // Offsets the map in the x axis by the # of spaces.
@@ -359,7 +411,6 @@ func roll_y(mat [][]float64, offset int) [][]float64 {
     return newMatrix
 }
 
-
 func (s *Square) afterInitUpdate() {
     // Should only be called after all squares are initialized
     s.North = &s.Game.Squares[s.X][(s.Y - 1) % s.Height]
@@ -368,7 +419,8 @@ func (s *Square) afterInitUpdate() {
     s.West = &s.Game.Squares[(s.X - 1) % s.Width][s.Y]
     s.Neighbors = []*Square{s.North, s.East, s.South, s.West}  // doesn't include self.
     s.ResetStatus = true
-    s.MovingHere = make([]*Square, 4)
+    s.MovingHere = make(map[int]*Square)
+    s.Target = nil
 }
 
 func (s *Square) update(owner float64, strength float64) {
@@ -380,7 +432,8 @@ func (s *Square) update(owner float64, strength float64) {
 func (s *Square) resetMove() {
     s.Move = -1
     s.ResetStatus = true
-    s.MovingHere = make([]*Square, 4)
+    s.MovingHere = make(map[int]*Square)
+    s.Target = nil
 }
 
 func (g *Game) sendFrame() {
@@ -401,7 +454,6 @@ func (g *Game) sendFrame() {
     }
     fmt.Println(outString)
 }
-
 
 func (g *Game) deserializeMapSize() {
     splitString := strings.Split(g.getString(), " ")
@@ -427,7 +479,6 @@ func (g *Game) deserializeProductions() {
             g.ProductionMap[x][y] = float64(yxproductions[y][x])
         }
     }
-
 }
 
 func (g *Game) getString() string {
@@ -510,7 +561,6 @@ func Min2d(array [][]float64) float64 {
     return min
 }
 
-
 func MinAcross2d(array [][]float64, minVal float64) [][]float64 {
     // Returns an array which does a piecewise min between an array and a float64
     retArray := make([][]float64, len(array))
@@ -533,4 +583,27 @@ func MaxAcross2d(array [][]float64, maxVal float64) [][]float64 {
         }
     }
     return retArray
+}
+
+func Sum2d(array [][]float64) float64 {
+    // Takes a 2d array and returns the sum of all values
+    val := 0.0
+    for x := 0; x < len(array); x++ {
+        for y := 0; y < len(array[x]); y++ {
+            val += float64(array[x][y])
+        }
+    }
+    return val
+}
+
+func main() {
+    game := NewGame()
+    for {
+        game.getFrame()
+        game.update()
+
+        game.getMoves()
+
+        game.sendFrame()
+    }
 }
