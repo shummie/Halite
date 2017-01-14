@@ -146,6 +146,7 @@ func (g *Game) getFrame() {
             strValue, splitString = int_str_array_pop(splitString)
             g.StrengthMap[x][y] = float64(strValue)
             g.MoveMap[x][y] = -1  // Reset the move map
+            g.Squares[x][y].update(g.OwnerMap[x][y], g.StrengthMap[x][y])
         }
     }
 
@@ -289,12 +290,12 @@ func (g *Game) updateDistanceMaps() {
         for y := 0; y < g.Height; y++ {
             if g.Squares[x][y].Owner == 0 {
                 isBorder := false
-                for j := 0; j < 4 && !isBorder; j++ {
+                for j := 0; j < 4; j++ {
                     if g.Squares[x][y].Neighbors[j].Owner == g.MyID {
                         isBorder = true
                     }
                 }
-                if isBorder {
+                if isBorder == true {
                     borderSquares = append(borderSquares, g.Squares[x][y])
                     if g.Squares[x][y].Strength == 0 {
                        combatSquares = append(combatSquares, g.Squares[x][y])
@@ -307,7 +308,9 @@ func (g *Game) updateDistanceMaps() {
             }
         }
     }
+    log.Println(borderSquares)
     g.DistanceFromBorder = g.floodFill(borderSquares, 999, true)
+    // log.Println(g.DistanceFromBorder)
     g.DistanceFromOwned = g.floodFill(ownedSquares, 999, false)
     g.DistanceFromCombat = g.floodFill(combatSquares, 999, true)
 }
@@ -476,14 +479,16 @@ func (g *Game) eachSquareMoves() {
     // For now, let's just loop through the list of squares to determine who moves
     for x := 0; x < g.Width; x++ {
         for y := 0; y < g.Height; y++ {
-            square := g.Squares[x][y]
+            square := (g.Squares[x][y])
             if square.Owner == g.MyID && square.Move == -1 {
                 // Check distance from border
-                if g.DistanceFromBorder[x][y] == 1 {
+                if g.DistanceFromBorder[x][y] == 1.0 {
+                    log.Println("1")
                     // We're at a border, check if we can attack a cell
                     for d, n := range square.Neighbors {
                         if n.Owner != g.MyID && square.Strength > n.Strength {
                             g.makeMove(square, d)
+                            break
                         }
                     }
                 }
@@ -511,6 +516,7 @@ func (g *Game) makeMove(square *Square, d int) {
         }
     }
     square.Move = d
+    // log.Println(d)
     if d != 4 {
         square.Target = square.Neighbors[d]
         square.Target.MovingHere[square.Vertex] = square
@@ -537,8 +543,6 @@ func (g *Game) floodFill(sources []*Square, maxDistance float64, friendly_only b
 
     // Set all source squares to 0
     for _, square := range q {
-        log.Println((*square).X)
-        log.Println(square.Y)
         distanceMap[square.X][square.Y] = 0
     }
 
@@ -562,7 +566,7 @@ func (g *Game) floodFill(sources []*Square, maxDistance float64, friendly_only b
 
 func (g *Game) floodFillToTarget(source *Square, destination *Square, friendly_only bool) [][]float64 {
     // We start the fill AT the destination so we can get # of squares from source to destination.
-    q := make([]*Square, 0, 5)
+    q := make([]*Square, 1, 5)
     q[0] = destination
     distanceMap := make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
@@ -667,7 +671,7 @@ func (g *Game) sendFrame() {
                     // If we didn't actually assign a move, make sure it's still coded to STILL
                     square.Move = 4
                 }
-                outString = fmt.Sprintf("%s %d %d %d", outString, square.X, square.Y, square.Move)
+                outString = fmt.Sprintf("%s %d %d %d", outString, square.X, square.Y, translate_cardinal(square.Move))
             }
         }
     }
@@ -717,7 +721,7 @@ func int_str_array_pop(input []string) (int, []string) {
     return ret, input
 }
 
-func translate_cardinal(d Direction) Direction {
+func translate_cardinal(d int) int {
     // Cardinal index used by the framework is:
     // NORTH = 0, EAST = 1, SOUTH = 2, WEST = 3, STILL = 4
     // Cardinal index used by the game is:
