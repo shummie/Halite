@@ -11,6 +11,7 @@ import (
     "sort"
     "strings"
     "strconv"
+    "time"
 )
 
 var botname = "shummie v48-1-1-Go"
@@ -59,7 +60,7 @@ type Game struct {
     Frame, Phase int
     Reader *bufio.Reader
     Writer io.Writer
-    Squares [][]Square
+    Squares [][]*Square
 }
 
 func NewGame() Game {
@@ -71,19 +72,18 @@ func NewGame() Game {
     game.deserializeMapSize()
     game.deserializeProductions()
 
-    game.Squares = make([][]Square, game.Width)
+    game.Squares = make([][]*Square, game.Width)
     for x := 0; x < game.Width; x++ {
-        game.Squares[x] = make([]Square, game.Height)
+        game.Squares[x] = make([]*Square, game.Height)
         for y := 0; y < game.Height; y++ {
-            game.Squares[x][y] = Square{X:x, Y:y, Production:game.ProductionMap[x][y], Vertex:x * game.Height + y, Width:game.Width, Height:game.Height, Game:&game}
+            game.Squares[x][y] = &Square{X:x, Y:y, Production:game.ProductionMap[x][y], Vertex:x * game.Height + y, Width:game.Width, Height:game.Height, Game:&game}
         }
     }
-    for _, squareX := range game.Squares {
-        for _, square := range squareX {
-            square.afterInitUpdate()
+    for x := 0; x < game.Width; x++ {
+        for y := 0 ; y < game.Height; y++ {
+            game.Squares[x][y].afterInitUpdate()
         }
     }
-
     game.Frame = -1
 
     game.OwnerMap = make([][]float64, game.Width)
@@ -104,6 +104,7 @@ func NewGame() Game {
 
     game.MaxTurns = 10 * math.Pow(float64(game.Width * game.Height), 0.5)
 
+    game.createOneTimeMaps()
     game.setConfigs()
 
     fmt.Println(botname)
@@ -162,8 +163,11 @@ func (g *Game) createOneTimeMaps() {
     g.StrengthMap01 = MaxAcross2d(g.StrengthMap, 0.1)
     g.ProductionMap1 = MaxAcross2d(g.ProductionMap, 1)
     g.ProductionMap01 = MaxAcross2d(g.ProductionMap, 0.1)
-
+    start := time.Now()
     g.createDijkstraMaps()
+
+    end := time.Since(start)
+    log.Println("Dijkstra took %s", end)
 }
 
 func (g *Game) createDistanceMap(decay float64) [][][][]float64 {
@@ -176,8 +180,8 @@ func (g *Game) createDistanceMap(decay float64) [][][][]float64 {
     for x := 0; x < g.Width; x++ {
         zz[x] = make([]float64, g.Height)
         for y := 0; y < g.Height; y++ {
-            dist_x := math.Min(float64(x), float64(-x % g.Width))
-            dist_y := math.Min(float64(y), float64(-y % g.Height))
+            dist_x := math.Min(float64(x), float64((g.Width-x) % g.Width))
+            dist_y := math.Min(float64(y), float64((g.Height-y) % g.Height))
             dist := math.Max(dist_x + dist_y, 1)
             zz[x][y] = float64(dist * math.Exp(decay))
         }
@@ -189,17 +193,13 @@ func (g *Game) createDistanceMap(decay float64) [][][][]float64 {
         for y := 0; y < g.Height; y++ {
             distance_map[x][y] = make([][]float64, g.Width)
             for i := 0; i < g.Width; i++ {
-                distance_map[x][y][i] = make([]float64, g.Width)
+                distance_map[x][y][i] = make([]float64, g.Height)
             }
             distance_map[x][y] = roll_xy(zz, x, y)
         }
     }
     return distance_map
 }
-
-
-
-
 
 func (g *Game) update() {
     g.updateMaps()
@@ -213,7 +213,7 @@ func (g *Game) updateMaps() {
     g.updateBorderMaps()
     g.updateDistanceMaps()
     // g.updateEnemyMaps()  We'll do this later...
-    
+
     g.updateValueMaps()
 }
 
@@ -229,13 +229,13 @@ func (g *Game) updateValueMaps() {
             }
         }
     }
-    
+
     g.GlobalContributionMap = make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
         g.GlobalContributionMap[x] = make([]float64, g.Height)
         for y := 0; y < g.Height; y++ {
-            cellGlobalBonus = 0
-            for i := 0; i < g.Width {
+            cellGlobalBonus := 0.0
+            for i := 0; i < g.Width; i++ {
                 for j := 0; j < g.Height; j++ {
                     if g.OwnerMap[i][j] == 0 {
                         cellGlobalBonus += (1 / g.RecoveryCostMap[i][j]) / (g.DijkstraRecoveryCosts[x][y][i][j])
@@ -245,12 +245,12 @@ func (g *Game) updateValueMaps() {
             g.GlobalContributionMap[x][y] = cellGlobalBonus
         }
     }
-    
+
     g.ValueMap = make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
         g.ValueMap[x] = make([]float64, g.Height)
         for y := 0; y < g.Height; y ++ {
-            g.ValueMap[x][y] = g.RecoveryCostMap[x][y] - g.GlobalContributionMap[x][y]            
+            g.ValueMap[x][y] = g.RecoveryCostMap[x][y] - g.GlobalContributionMap[x][y]
         }
     }
 }
@@ -282,16 +282,25 @@ func (g *Game) updateOwnerMaps() {
 }
 
 func (g *Game) updateDistanceMaps() {
-    borderSquares := make([]Square, 20)
-    ownedSquares := make([]Square, 20)
-    combatSquares := make([]Square, 20)
+    borderSquares := make([]*Square, 0, 20)
+    ownedSquares := make([]*Square, 0, 20)
+    combatSquares := make([]*Square, 0, 20)
     for x := 0; x < g.Width; x++ {
         for y := 0; y < g.Height; y++ {
             if g.Squares[x][y].Owner == 0 {
-                borderSquares = append(borderSquares, g.Squares[x][y])
-                if g.Squares[x][y].Strength == 0 {
-                    combatSquares = append(combatSquares, g.Squares[x][y])
+                isBorder := false
+                for j := 0; j < 4 && !isBorder; j++ {
+                    if g.Squares[x][y].Neighbors[j].Owner == g.MyID {
+                        isBorder = true
+                    }
                 }
+                if isBorder {
+                    borderSquares = append(borderSquares, g.Squares[x][y])
+                    if g.Squares[x][y].Strength == 0 {
+                       combatSquares = append(combatSquares, g.Squares[x][y])
+                    }
+                }
+
             }
             if g.Squares[x][y].Owner == g.MyID {
                 ownedSquares = append(ownedSquares, g.Squares[x][y])
@@ -308,7 +317,7 @@ func (g *Game) updateBorderMaps() {
     g.CombatZoneMap = make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
         g.BorderMap[x] = make([]float64, g.Height)
-        g.CombatZoneMap[x] = make([]float64, g.Width)
+        g.CombatZoneMap[x] = make([]float64, g.Height)
         for y := 0; y < g.Height; y++ {
             if g.Squares[x][y].Owner == 0 {
                 for _, n := range g.Squares[x][y].Neighbors {
@@ -351,21 +360,21 @@ func (g *Game) attackBorders() {
 
 func (g *Game) moveInnerSquares() {
     // Simple function. just move towards highest value border.
-    
+
     for x := 0; x < g.Width; x++ {
         for y := 0; y < g.Height; y++ {
             square := g.Squares[x][y]
             if square.Owner == g.MyID && square.Move == -1 && square.Strength > (square.Production * g.Buildup) {
                 var target *Square
-                targetVal = 9999
+                targetVal := 9999.0
                 for i := 0; i < g.Width; i++ {
                     for j := 0; j < g.Height; j++ {
                         // Note, need to add some sort of distance modifier.
-                        if g.BorderMap[i][j] && targetVal > g.ValueMap[i][j] {
+                        if g.BorderMap[i][j] == 1 && targetVal > g.ValueMap[i][j] {
                             targetVal = g.ValueMap[i][j]
                             target = g.Squares[i][j]
                         }
-                    }    
+                    }
                 }
                 g.moveSquareToTarget(g.Squares[x][y], target, true)
             }
@@ -373,19 +382,19 @@ func (g *Game) moveInnerSquares() {
     }
 }
 
-func (g *Game) attackCell(target Square, maxDistance int) bool {
+func (g *Game) attackCell(target *Square, maxDistance int) bool {
     // Attempts to coordinate attacks to the target Square by calling cells distance out.
-    for cellsOut := 1; cellsOut <= maxDistance; cellsOut++ {
+    for cellsOut := 1.0; cellsOut <= float64(maxDistance); cellsOut++ {
         // Don't attempt to coordinate a multi-cell attack into a combat zone
         if cellsOut > 1 && g.CombatZoneMap[target.X][target.Y] == 1 {
             return false
         }
         movingCells := make([]*Square, 0, 5)
-        stillCells := make([]*Square, 0, 5)        
-        targetDistMap = g.floodFill([1]Square{target}, cellsOut, true)
-        availableStrength = 0
-        availableProduction = 0
-        stillStrength = 0
+        stillCells := make([]*Square, 0, 5)
+        targetDistMap := g.floodFill([]*Square{target}, cellsOut, true)
+        availableStrength := 0.0
+        availableProduction := 0.0
+        stillStrength := 0.0
         for x := 0; x < g.Width; x++ {
             for y := 0; y < g.Height; y++ {
                 if targetDistMap[x][y] == -1 {
@@ -404,15 +413,15 @@ func (g *Game) attackCell(target Square, maxDistance int) bool {
                 }
             }
         }
-        
+
         if (availableProduction + availableStrength) > target.Strength {
             for _, square := range stillCells {
-                g.makeMove((*square), STILL)
+                g.makeMove(square, 4)
             }
-            neededStrengthFromMovers = target.Strength - availableProduction - stillStrength + 1
-            
+            neededStrengthFromMovers := target.Strength - availableProduction - stillStrength + 1
+
             if neededStrengthFromMovers > 0 {
-                movingCells = sort.Sort(sort.Reverse(ByStrength(movingCells)))
+                sort.Sort(sort.Reverse(ByStrength(movingCells)))
                 for _, square := range movingCells {
                     if square.Strength > 0 {
                         if cellsOut == 1 {
@@ -437,26 +446,27 @@ func (g *Game) attackCell(target Square, maxDistance int) bool {
 
 func (g *Game) moveSquareToTarget(s *Square, d *Square, throughFriendly bool) bool {
     // Does a "simple" movement based on a BFS.
-    distanceMap = g.floodFillToTarget((*s), (*d), throughFriendly)
+    distanceMap := g.floodFillToTarget(s, d, throughFriendly)
     sDist := distanceMap[s.X][s.Y]
-    if sDist == -1 || s_dist == 0 {
+    if sDist == -1 || sDist == 0 {
         // Couldn't find a path to the destination or trying to move STILL
         return false
     }
-    
-    pathChoices = make([]int, 0, 2)
-    for d := 0; d < 4; d++ { 
-        n = s.Neighbors[d]
+
+    pathChoices := make([]int, 0, 2)
+    for dir := 0; dir < 4; dir++ {
+        n := s.Neighbors[dir]
         if distanceMap[n.X][n.Y] == (sDist - 1) {
-            pathChoices = append(pathChoices, d)
+            pathChoices = append(pathChoices, dir)
         }
     }
-    
+
     // There should be at most 2 cells in pathChoices.
     // We can do a sort by production here if we think it's valuable. I don't feel like writing the sort function right now.
-    
+
     g.makeMove(s, pathChoices[0])
-    
+    return true
+
     // Strength collision code goes here.
 }
 
@@ -482,7 +492,7 @@ func (g *Game) eachSquareMoves() {
     }
 }
 
-func (g *Game) makeMove(square Square, d int) {
+func (g *Game) makeMove(square *Square, d int) {
     g.MoveMap[square.X][square.Y] = float64(d)
 
     if d == -1 {
@@ -503,11 +513,11 @@ func (g *Game) makeMove(square Square, d int) {
     square.Move = d
     if d != 4 {
         square.Target = square.Neighbors[d]
-        square.Target.MovingHere[square.Vertex] = &square
+        square.Target.MovingHere[square.Vertex] = square
     }
 }
 
-func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bool) [][]float64 {
+func (g *Game) floodFill(sources []*Square, maxDistance float64, friendly_only bool) [][]float64 {
     // Returns a [][]int that contains the distance to the source through friendly squares only.
     // -1 : Non friendly spaces or friendly spaces unreachable to sources through friendly squares
     // 0 : Source squares
@@ -521,8 +531,14 @@ func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bo
         }
     }
 
+    if len(sources) == 0 {
+        return distanceMap
+    }
+
     // Set all source squares to 0
-    for _, square := range sources {
+    for _, square := range q {
+        log.Println((*square).X)
+        log.Println(square.Y)
         distanceMap[square.X][square.Y] = 0
     }
 
@@ -532,10 +548,10 @@ func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bo
         currentDistance := distanceMap[c.X][c.Y]
         for _, n := range c.Neighbors {
             if (distanceMap[n.X][n.Y] == -1 || distanceMap[n.X][n.Y] > (currentDistance + 1)) {
-                if (friendly_only && n.Owner == g.MyID) || (!friendly_only && n.Owner != g.MyID) {
+                if (friendly_only && n.Owner == g.MyID) || (!friendly_only) {
                     distanceMap[n.X][n.Y] = currentDistance + 1
                     if currentDistance < maxDistance - 1 {
-                        q = append(q, *n)
+                        q = append(q, n)
                     }
                 }
             }
@@ -544,9 +560,10 @@ func (g *Game) floodFill(sources []Square, maxDistance float64, friendly_only bo
     return distanceMap
 }
 
-func (g *Game) floodFillToTarget(source Square, destination Square, friendly_only bool) [][]float64 {
+func (g *Game) floodFillToTarget(source *Square, destination *Square, friendly_only bool) [][]float64 {
     // We start the fill AT the destination so we can get # of squares from source to destination.
-    q := [1]Square{destination}
+    q := make([]*Square, 0, 5)
+    q[0] = destination
     distanceMap := make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
         distanceMap[x] = make([]float64, g.Height)
@@ -561,11 +578,9 @@ func (g *Game) floodFillToTarget(source Square, destination Square, friendly_onl
         currentDistance := distanceMap[c.X][c.Y]
         for _, n := range c.Neighbors {
             if (distanceMap[n.X][n.Y] == -1 || distanceMap[n.X][n.Y] > (currentDistance + 1)) {
-                if (friendly_only && n.Owner == g.MyID) || (!friendly_only && n.Owner != g.MyID) {
+                if (friendly_only && n.Owner == g.MyID) || (!friendly_only) {
                     distanceMap[n.X][n.Y] = currentDistance + 1
-                    if currentDistance < maxDistance - 1 {
-                        q = append(q, *n)
-                    }
+                    q = append(q, n)
                 }
             }
         }
@@ -581,7 +596,7 @@ func roll_xy(mat [][]float64, ox int, oy int ) [][]float64 {
         y_len := len(mat[x])
         newMatrix[x] = make([]float64, y_len)
         for y := 0; y < y_len; y++ {
-            newMatrix[x][y] = mat[(x - ox) % x_len][(y - oy) % y_len]
+            newMatrix[x][y] = mat[(x - ox + x_len) % x_len][(y - oy + y_len) % y_len]
         }
     }
     return newMatrix
@@ -617,10 +632,10 @@ func roll_y(mat [][]float64, offset int) [][]float64 {
 
 func (s *Square) afterInitUpdate() {
     // Should only be called after all squares are initialized
-    s.North = &s.Game.Squares[s.X][(s.Y - 1) % s.Height]
-    s.East = &s.Game.Squares[(s.X + 1) % s.Width][s.Y]
-    s.South = &s.Game.Squares[s.X][(s.Y + 1) % s.Height]
-    s.West = &s.Game.Squares[(s.X - 1) % s.Width][s.Y]
+    s.North = s.Game.Squares[s.X][(s.Y - 1 + s.Height) % s.Height]
+    s.East = s.Game.Squares[(s.X + 1 + s.Width) % s.Width][s.Y]
+    s.South = s.Game.Squares[s.X][(s.Y + 1 + s.Height) % s.Height]
+    s.West = s.Game.Squares[(s.X - 1 + s.Width) % s.Width][s.Y]
     s.Neighbors = []*Square{s.North, s.East, s.South, s.West}  // doesn't include self.
     s.ResetStatus = true
     s.MovingHere = make(map[int]*Square)
@@ -667,11 +682,12 @@ func (g *Game) deserializeMapSize() {
 
 func (g *Game) deserializeProductions() {
     splitString := strings.Split(g.getString(), " ")
-    
+
     g.ProductionMap = make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
         g.ProductionMap[x] = make([]float64, g.Height)
         for y := 0; y < g.Height; y++ {
+            var prod_val int
             prod_val, splitString = int_str_array_pop(splitString)
             g.ProductionMap[x][y] = float64(prod_val)
         }
@@ -794,6 +810,9 @@ func Sum2d(array [][]float64) float64 {
 }
 
 func main() {
+    f, _ := os.OpenFile("gologfile.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+    log.SetOutput(f)
+    log.Println("Hi")
     game := NewGame()
     for {
         game.getFrame()
@@ -805,46 +824,51 @@ func main() {
     }
 }
 
+
+
 func (g *Game) getxy(vertex int) (int, int) {
-    x = int(math.Floor(vertex / g.Height))
-    y = vertex % g.Height
+    x := int(math.Floor(float64(vertex) / float64(g.Height)))
+    y := vertex % g.Height
     return x, y
 }
 
 func (g *Game) createDijkstraMaps() {
     // Creates the dijkstra map(s) that will be utilized in this bot.
-    
+
     // A 4-d array is created which contains all the information on the costs and routes for every cell to every other cell.
     // Ignores who owns the cell
-    
+
     // Run Dijkstra on recovery cost for all squares to all squares.
-    
-    edges, nodes = g.makeGraphRecovery()
+
+    // edges, nodes := g.makeGraphRecovery()
+    _, nodes := g.makeGraphRecovery()
     g.DijkstraRecoveryCosts = make([][][][]float64, g.Width)
     g.DijkstraRecoveryPaths = make([][][][]int, g.Width)
     for x := 0; x < g.Width; x++ {
         g.DijkstraRecoveryCosts[x] = make([][][]float64, g.Height)
         g.DijkstraRecoveryPaths[x] = make([][][]int, g.Height)
-        for y := 0; x < g.Height; y++ {
-            g.DijkstraRecoveryCosts[x][y] = make([][]float64, g.Height)
-            g.DijkstraRecoveryPaths[x][y] = make([][]int, g.Height)
+        for y := 0; y < g.Height; y++ {
+            g.DijkstraRecoveryCosts[x][y] = make([][]float64, g.Width)
+            g.DijkstraRecoveryPaths[x][y] = make([][]int, g.Width)
             for a := 0; a < g.Width; a++ {
                 g.DijkstraRecoveryCosts[x][y][a] = make([]float64, g.Height)
                 g.DijkstraRecoveryPaths[x][y][a] = make([]int, g.Height)
+            }
+        }
     }
     for startV := 0; startV < g.Height * g.Width; startV++ {
-        vx, vy = g.getxy(startV)
-        
-        pathList = dijkstra(nodes, startV, nil)
+        vx, vy := g.getxy(startV)
+        pathList := dijkstra(nodes, nodes[startV], nil)
         for _, path := range pathList{
-            target = path.targetVertex
-            tx, ty = g.getxy(target)
+            target := path.targetVertex
+            tx, ty := g.getxy(target)
             g.DijkstraRecoveryCosts[vx][vy][tx][ty] = path.length
-            if len(path.path) > 1 {
-                g.DijkstraRecoveryPaths[vx][vy][tx][ty] = path.path[1]
-            } else {
-                g.DijkstraRecoveryPaths[vx][vy][tx][ty] = -9999
-            }
+            g.DijkstraRecoveryPaths[vx][vy][tx][ty] = path.path
+            // if len(path.path) > 1 {
+            //     g.DijkstraRecoveryPaths[vx][vy][tx][ty] = path.path[1]
+            // } else {
+            //     g.DijkstraRecoveryPaths[vx][vy][tx][ty] = -9999
+            // }
         }
     }
 }
@@ -856,7 +880,7 @@ type Edge struct {
 }
 
 type Node struct {
-    V int 
+    V int
     TDist float64  // tentative distance
     Prev *Node
     Done bool  // True when Tdist and Prev represent the shortest path
@@ -881,12 +905,12 @@ func (g *Game) makeGraphRecovery() ([]Edge, []*Node) {
             graph = append(graph, Edge{V1: g.Squares[x][y].South.Vertex, V2: g.Squares[x][y].Vertex, Dist: g.StrengthMap1[x][y] / g.ProductionMap01[x][y]})
             graph = append(graph, Edge{V1: g.Squares[x][y].West.Vertex, V2: g.Squares[x][y].Vertex, Dist: g.StrengthMap1[x][y] / g.ProductionMap01[x][y]})
             graph = append(graph, Edge{V1: g.Squares[x][y].East.Vertex, V2: g.Squares[x][y].Vertex, Dist: g.StrengthMap1[x][y] / g.ProductionMap01[x][y]})
-            
+
             // Add the node
             nodes[g.Squares[x][y].Vertex] = &Node{V: g.Squares[x][y].Vertex}
         }
     }
-    
+
     for _, e := range graph {
         n1 := nodes[e.V1]
         n2 := nodes[e.V2]
@@ -896,29 +920,29 @@ func (g *Game) makeGraphRecovery() ([]Edge, []*Node) {
 }
 
 type path struct {
-    path []int
+    // path []int
+    path int
     length float64
     targetVertex int
 }
 
-func dijkstra(allNodes []*Node, startNode, endNode *node) (pathList []path) {
+func dijkstra(allNodes []*Node, startNode, endNode *Node) (pathList []path) {
     // 1. Assign to every node a tentative distance value: set it to zero for our initial node and to infinity for all other nodes.
     // 2. Set the initial node as current. Mark all other nodes unvisited. Create a set of all the unvisited nodes called the unvisited set.
     for _, nd := range allNodes {
-        nd.TDist = math.MaxFloat64
+        nd.TDist = 99999.99
         nd.Done = false
         nd.Prev = nil
         nd.Rx = -1
     }
-    
+
     current := startNode
     current.TDist = 0
     var unvisited ndList
-    
     for {
         // 3. For the current node, consider all of its unvisited neighbors and calculate their tentative distances. Compare the newly calculated tentative distance to the current assigned value and assign the smaller one. For example, if the current node A is marked with a distance of 6, and the edge connecting it with a neighbor B has length 2, then the distance to B (through A) will be 6 + 2 = 8. If B was previously marked with a distance greater than 8 then change it to 8. Otherwise, keep the current value.
         for _, nb := range current.Neighbors {
-            if nd := nb.Node; !nd.done {
+            if nd := nb.Node; !nd.Done {
                 if d := current.TDist + nb.Dist; d < nd.TDist {
                     nd.TDist = d
                     nd.Prev = current
@@ -937,14 +961,23 @@ func dijkstra(allNodes []*Node, startNode, endNode *node) (pathList []path) {
             distance := current.TDist
             // Recover path by tracing prev links
             var p []int
-            for ; current != nil; current.Prev {
+            target := current.V
+            for ; current != nil; current = current.Prev {
                 p = append(p, current.V)
             }
             // Reverse the list
-            for i := (len(p) + 1) / 2; i > 0; i-- {
-                p[i-1], p[len(p)-i] = p[len(p)-1], p[i-1]
+            // for i := (len(p) + 1) / 2; i > 0; i-- {
+            //     p[i-1], p[len(p)-i] = p[len(p)-1], p[i-1]
+            // }
+            // pathList = append(pathList, path{p, distance, target})
+            var prior int
+            if len(p) > 1 {
+                prior = p[len(p) - 1]
+            } else {
+                prior = -9999
             }
-            pathList = append(pathList, path{p, distance, current.V})
+
+            pathList = append(pathList, path{prior, distance, target})
             // 5. If the destination node has been marked visited (when planning a route between two specific nodes) or if the smallest tentative distance among the nodes in the unvisited set is infinity (when planning a complete traversal; occurs when there is no connection between the initial node and remaining unvisited nodes), then stop. The algorithm has finished.
             if endNode != nil {
                 return
@@ -955,12 +988,13 @@ func dijkstra(allNodes []*Node, startNode, endNode *node) (pathList []path) {
         }
         // 6. Otherwise, select the unvisited node that is marked with the smallest tentative distance, set it as the new "current node", and go back to step 3.
         current = heap.Pop(&unvisited).(*Node)
-    }    
+    }
     return
 }
 
+
 // ndList implements a container/heap
-type ndList []*node
+type ndList []*Node
 
 func (n ndList) Len() int {
     return len(n)
@@ -990,8 +1024,8 @@ func (n *ndList) Pop() interface{} {
     r.Rx = -1
     return r
 }
-    
-    
+
+
 type ByStrength []*Square
 
 func (s ByStrength) Len() int {
@@ -1004,4 +1038,4 @@ func (s ByStrength) Swap(i, j int) {
 
 func (s ByStrength) Less(i, j int) bool {
     return s[i].Strength < s[j].Strength
-}    
+}
