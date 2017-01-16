@@ -37,7 +37,12 @@ map_at_turn_x(39)
 
 
 as.matrix(data.table::fread("recover_0_map_80.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
-as.matrix(data.table::fread("value_map_80.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
-data.table::fread("value_prod_map_80.txt") %>% apply(2, function(x) {x[x == 9999] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+as.matrix(data.table::fread("value_map_1.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+as.matrix(data.table::fread("base_value_map_1.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+
+
+data.table::fread("base_value_56.txt") %>% apply(2, function(x) {x[x == 100] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+data.table::fread("value_map_56.txt") %>% apply(2, function(x) {x[x == 1000] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+data.table::fread("global_border_56.txt") %>% apply(2, function(x) {x[x == 0] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
 as.matrix(data.table::fread("test_80.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
 

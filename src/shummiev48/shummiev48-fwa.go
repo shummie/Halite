@@ -14,11 +14,7 @@ import (
     "time"
 )
 
-var Rx [][]int
-
 var botname = "shummie v48-1-1-Go"
-
-var Height, Width int
 
 type Square struct {
     X, Y int
@@ -60,17 +56,12 @@ type Game struct {
     DistanceMapNoDecay [][][][]float64
     DijkstraRecoveryCosts [][][][]float64
     DijkstraRecoveryPaths [][][][]int
-    DijkstraRecoveryCosts2 [][][][]float64
-    DijkstraRecoveryPaths2 [][][][]int
-    DijkstraRecoveryCosts3 [][][][]float64
-    DijkstraRecoveryPaths3 [][][][]int
-    DijkstraRecoveryDone3 [][][][]bool
-
     RecoveryCostMap, GlobalContributionMap, ValueMap [][]float64
     Frame, Phase int
     Reader *bufio.Reader
     Writer io.Writer
     Squares [][]*Square
+    FWARecoveryCosts [][][][]float64
 }
 
 func NewGame() Game {
@@ -80,8 +71,6 @@ func NewGame() Game {
     }
     game.MyID = float64(game.getInt())
     game.deserializeMapSize()
-    Height = game.Height
-    Width = game.Width
     game.deserializeProductions()
 
     game.Squares = make([][]*Square, game.Width)
@@ -182,20 +171,9 @@ func (g *Game) createOneTimeMaps() {
     end := time.Since(start)
     log.Println("Dijkstra took %s", end)
     start = time.Now()
-    g.createDijkstraMaps2()
+    g.createFWAMaps()
     end = time.Since(start)
-    log.Println("Dijkstra2 took %s", end)
-    start = time.Now()
-    // g.dijkstra3()
-    end = time.Since(start)
-    log.Println("Dijkstra3 took %s", end)
-    start = time.Now()
-    g.singledijkstra()
-    end = time.Since(start)
-    log.Println("Single Dijkstra test took %s", end)
-    // log.Println(g.DijkstraRecoveryCosts)
-    // log.Println(g.DijkstraRecoveryCosts2)
-    // log.Println(g.DijkstraRecoveryCosts3)
+    log.Println("FWA took %s", end)
 }
 
 func (g *Game) createDistanceMap(decay float64) [][][][]float64 {
@@ -509,6 +487,7 @@ func (g *Game) eachSquareMoves() {
             if square.Owner == g.MyID && square.Move == -1 {
                 // Check distance from border
                 if g.DistanceFromBorder[x][y] == 1.0 {
+                    log.Println("1")
                     // We're at a border, check if we can attack a cell
                     for d, n := range square.Neighbors {
                         if n.Owner != g.MyID && square.Strength > n.Strength {
@@ -861,13 +840,6 @@ func (g *Game) getxy(vertex int) (int, int) {
     return x, y
 }
 
-func getxy(vertex int) (int, int) {
-    x := int(math.Floor(float64(vertex) / float64(Height)))
-    y := vertex % Height
-    return x, y
-}
-
-
 func (g *Game) createDijkstraMaps() {
     // Creates the dijkstra map(s) that will be utilized in this bot.
 
@@ -893,47 +865,6 @@ func (g *Game) createDijkstraMaps() {
         }
     }
     for startV := 0; startV < g.Height * g.Width; startV++ {
-        vx, vy := g.getxy(startV)
-        pathList := dijkstra(nodes, nodes[startV], nil)
-        for _, path := range pathList{
-            target := path.targetVertex
-            tx, ty := g.getxy(target)
-            g.DijkstraRecoveryCosts[vx][vy][tx][ty] = path.length
-            g.DijkstraRecoveryPaths[vx][vy][tx][ty] = path.path
-            // if len(path.path) > 1 {
-            //     g.DijkstraRecoveryPaths[vx][vy][tx][ty] = path.path[1]
-            // } else {
-            //     g.DijkstraRecoveryPaths[vx][vy][tx][ty] = -9999
-            // }
-        }
-    }
-}
-
-func (g *Game) singledijkstra() {
-    // Creates the dijkstra map(s) that will be utilized in this bot.
-
-    // A 4-d array is created which contains all the information on the costs and routes for every cell to every other cell.
-    // Ignores who owns the cell
-
-    // Run Dijkstra on recovery cost for all squares to all squares.
-
-    // edges, nodes := g.makeGraphRecovery()
-    _, nodes := g.makeGraphRecovery()
-    g.DijkstraRecoveryCosts = make([][][][]float64, g.Width)
-    g.DijkstraRecoveryPaths = make([][][][]int, g.Width)
-    for x := 0; x < g.Width; x++ {
-        g.DijkstraRecoveryCosts[x] = make([][][]float64, g.Height)
-        g.DijkstraRecoveryPaths[x] = make([][][]int, g.Height)
-        for y := 0; y < g.Height; y++ {
-            g.DijkstraRecoveryCosts[x][y] = make([][]float64, g.Width)
-            g.DijkstraRecoveryPaths[x][y] = make([][]int, g.Width)
-            for a := 0; a < g.Width; a++ {
-                g.DijkstraRecoveryCosts[x][y][a] = make([]float64, g.Height)
-                g.DijkstraRecoveryPaths[x][y][a] = make([]int, g.Height)
-            }
-        }
-    }
-    for startV := 0; startV < 1; startV++ {
         vx, vy := g.getxy(startV)
         pathList := dijkstra(nodes, nodes[startV], nil)
         for _, path := range pathList{
@@ -1007,7 +938,7 @@ func dijkstra(allNodes []*Node, startNode, endNode *Node) (pathList []path) {
     // 1. Assign to every node a tentative distance value: set it to zero for our initial node and to infinity for all other nodes.
     // 2. Set the initial node as current. Mark all other nodes unvisited. Create a set of all the unvisited nodes called the unvisited set.
     for _, nd := range allNodes {
-        nd.TDist = math.Inf(1)
+        nd.TDist = 99999.99
         nd.Done = false
         nd.Prev = nil
         nd.Rx = -1
@@ -1117,529 +1048,70 @@ func (s ByStrength) Less(i, j int) bool {
     return s[i].Strength < s[j].Strength
 }
 
-func (g *Game) createDijkstraMaps2() {
-    // Creates the dijkstra map(s) that will be utilized in this bot.
-
-    // A 4-d array is created which contains all the information on the costs and routes for every cell to every other cell.
-    // Ignores who owns the cell
-
-    // Run Dijkstra on recovery cost for all squares to all squares.
-
-    // edges, nodes := g.makeGraphRecovery()
-    g.DijkstraRecoveryCosts2 = make([][][][]float64, g.Width)
-    g.DijkstraRecoveryPaths2 = make([][][][]int, g.Width)
+func (g *Game) createFWAMaps() {
+    recovery := make([][]float64, g.Width)
     for x := 0; x < g.Width; x++ {
-        g.DijkstraRecoveryCosts2[x] = make([][][]float64, g.Height)
-        g.DijkstraRecoveryPaths2[x] = make([][][]int, g.Height)
+        recovery[x] = make([]float64, g.Height)
         for y := 0; y < g.Height; y++ {
-            g.DijkstraRecoveryCosts2[x][y] = make([][]float64, g.Width)
-            g.DijkstraRecoveryPaths2[x][y] = make([][]int, g.Width)
-            for a := 0; a < g.Width; a++ {
-                g.DijkstraRecoveryCosts2[x][y][a] = make([]float64, g.Height)
-                g.DijkstraRecoveryPaths2[x][y][a] = make([]int, g.Height)
-            }
+            recovery[x][y] = g.StrengthMap1[x][y] / g.ProductionMap01[x][y]
         }
     }
-    for startV := 0; startV < g.Height * g.Width; startV++ {
-        vx, vy := g.getxy(startV)
-        costs, paths := g.dijkstra2(startV, -1)
+    g.FWARecoveryCosts = fwa(recovery)
 
-        for x := 0; x < g.Width; x++ {
-            for y := 0; y < g.Height; y++ {
-                g.DijkstraRecoveryCosts2[vx][vy][x][y] = costs[x][y]
-                g.DijkstraRecoveryPaths2[vx][vy][x][y] = paths[x][y]
-            }
-        }
-    }
 }
 
-func (g *Game) dijkstra2(startNode int, endNode int) ([][]float64, [][]int){
-
-    TDist := make([][]float64, g.Width)
-    Done := make([][]bool, g.Width)
-    Prev := make([][]int, g.Width) // Vertex # will be used here.
-    Rx = make([][]int, g.Width)
-    Dist := make([][]float64, g.Width)
-
-    for x := 0; x < g.Width; x++ {
-        TDist[x] = make([]float64, g.Height)
-        Done[x] = make([]bool, g.Height)
-        Prev[x] = make([]int, g.Height)
-        Rx[x] = make([]int, g.Height)
-        Dist[x] = make([]float64, g.Height)
-        for y := 0; y < g.Height; y++ {
-            TDist[x][y] = math.Inf(1)
-            Done[x][y] = false
-            Prev[x][y] = -1
-            Rx[x][y] = -1
-            Dist[x][y] = math.Inf(1)
-        }
-    }
-
-    current := startNode
-    cx, cy := g.getxy(current)
-    TDist[cx][cy] = 0
-
-    var unvisited intList
-    for {
-        // log.Println("start")
-        // log.Println(startNode)
-        // log.Println(Rx)
-        // 3. For the current node, consider all of its unvisited neighbors and calculate their tentative distances. Compare the newly calculated tentative distance to the current assigned value and assign the smaller one. For example, if the current node A is marked with a distance of 6, and the edge connecting it with a neighbor B has length 2, then the distance to B (through A) will be 6 + 2 = 8. If B was previously marked with a distance greater than 8 then change it to 8. Otherwise, keep the current value.
-
-        // North
-        nx, ny := cx, (cy - 1 + g.Height) % g.Height
-        // log.Println("North")
-        // log.Println(nx)
-        // log.Println(ny)
-        if !Done[nx][ny] {
-            // log.Println("done")
-            cost := g.StrengthMap1[nx][ny]/g.ProductionMap01[nx][ny]
-            // log.Println("cost")
-            nDist := TDist[cx][cy] + cost
-            // log.Println("ndist")
-            if nDist < TDist[nx][ny] {
-                TDist[nx][ny] = nDist
-                // log.Println("tdist")
-                Prev[nx][ny] = current
-                // log.Println("prev")
-                if Rx[nx][ny] < 0 {
-                    // log.Println("prepush")
-                    heapValue := float64(nx * g.Height + ny) * 1000000000.0 + float64(len(unvisited)) * 100000.0 + float64(TDist[nx][ny]) / 1000
-                    Rx[nx][ny] = len(unvisited)
-                    // log.Println("rx")
-                    // log.Println(heapValue)
-                    heap.Push(&unvisited, heapValue)
-                    // log.Println("push")
-                } else {
-                    // log.Println("prefix")
-                    heap.Fix(&unvisited, Rx[nx][ny])
-                    // log.Println("fix")
+func fwa(costs [][]float64) [][][][]float64 {
+    // 1 let dist be a |V| × |V| array of minimum distances initialized to ∞ (infinity)
+    dist := make([][][][]float64, len(costs))
+    for x := 0; x < len(costs); x++ {
+        dist[x] = make([][][]float64, len(costs[x]))
+        for y := 0; y < len(costs[x]); y++ {
+            dist[x][y] = make([][]float64, len(costs))
+            for i := 0; i < len(costs); i++ {
+                dist[x][y][i] = make([]float64, len(costs[x]))
+                for j := 0; j < len(costs); j++ {
+                    dist[x][y][i][j] = math.Inf(1)
                 }
             }
-        }
-        // South
-        nx, ny = cx, (cy + 1) % g.Height
-        // log.Println("South")
-        // log.Println(nx)
-        // log.Println(ny)
-
-        if !Done[nx][ny] {
-            // log.Println("done")
-            cost := g.StrengthMap1[nx][ny]/g.ProductionMap01[nx][ny]
-            // log.Println("cost")
-            nDist := TDist[cx][cy] + cost
-            // log.Println("ndist")
-            if nDist < TDist[nx][ny] {
-                TDist[nx][ny] = nDist
-                // log.Println("tdist")
-                Prev[nx][ny] = current
-                // log.Println("prev")
-                if Rx[nx][ny] < 0 {
-                    // log.Println("prepush")
-                    heapValue := float64(nx * g.Height + ny) * 1000000000.0 + float64(len(unvisited)) * 100000.0 + float64(TDist[nx][ny]) / 1000
-                    Rx[nx][ny] = len(unvisited)
-                    // log.Println("rx")
-                    // log.Println(heapValue)
-                    heap.Push(&unvisited, heapValue)
-                    // log.Println("push")
-                } else {
-                    // log.Println("prefix")
-                    heap.Fix(&unvisited, Rx[nx][ny])
-                    // log.Println("fix")
-                }
-            }
-        }
-        // West
-        nx, ny = (cx - 1 + g.Width) % g.Width, cy
-        // log.Println("West")
-        // log.Println(nx)
-        // log.Println(ny)
-        if !Done[nx][ny] {
-            cost := g.StrengthMap1[nx][ny]/g.ProductionMap01[nx][ny]
-            nDist := TDist[cx][cy] + cost
-            if nDist < TDist[nx][ny] {
-                TDist[nx][ny] = nDist
-                Prev[nx][ny] = current
-                if Rx[nx][ny] < 0 {
-                    heapValue := float64(nx * g.Height + ny) * 1000000000.0 + float64(len(unvisited)) * 100000.0 + float64(TDist[nx][ny]) / 1000
-                    Rx[nx][ny] = len(unvisited)
-                    heap.Push(&unvisited, heapValue)
-                } else {
-                    heap.Fix(&unvisited, Rx[nx][ny])
-                }
-            }
-        }
-        // East
-        nx, ny = (cx + 1) % g.Width, cy
-        // log.Println("East")
-        // log.Println(nx)
-        // log.Println(ny)
-        if !Done[nx][ny] {
-            cost := g.StrengthMap1[nx][ny]/g.ProductionMap01[nx][ny]
-            nDist := TDist[cx][cy] + cost
-            if nDist < TDist[nx][ny] {
-                TDist[nx][ny] = nDist
-                Prev[nx][ny] = current
-                if Rx[nx][ny] < 0 {
-                    heapValue := float64(nx * g.Height + ny) * 1000000000.0 + float64(len(unvisited)) * 100000.0 + float64(TDist[nx][ny]) / 1000
-                    Rx[nx][ny] = len(unvisited)
-                    heap.Push(&unvisited, heapValue)
-                } else {
-                    heap.Fix(&unvisited, Rx[nx][ny])
-                }
-            }
-        }
-        // 4. When we are done considering all of the neighbors of the current node, mark the current node as visited and remove it from the unvisited set. A visited node will never be checked again.
-        Done[cx][cy] = true
-        if endNode == -1 || current == endNode {
-            // Record path and distance for return value
-            Dist[cx][cy] = TDist[cx][cy]
-            // 5. If the destination node has been marked visited (when planning a route between two specific nodes) or if the smallest tentative distance among the nodes in the unvisited set is infinity (when planning a complete traversal; occurs when there is no connection between the initial node and remaining unvisited nodes), then stop. The algorithm has finished.
-            if endNode != -1 {
-                return Dist, Prev
-            }
-        }
-        if len(unvisited) == 0 {
-            break  // No more reachable nodes
-        }
-        // 6. Otherwise, select the unvisited node that is marked with the smallest tentative distance, set it as the new "current node", and go back to step 3.
-        // log.Println("popping")
-        next := heap.Pop(&unvisited).(float64)
-        // log.Println("afterpop")
-        current = int(int(next) / 1000000000)
-        // log.Println("current/cx/cy")
-        // log.Println(current)
-        cx, cy = g.getxy(current)
-        // log.Println(cx)
-        // log.Println(cy)
-        Rx[cx][cy] = -1
-    }
-
-    return Dist, Prev
-}
-
-// ndList implements a container/heap
-type intList []float64
-
-func (n intList) Len() int {
-    return len(n)
-}
-
-func (n intList) Less(i, j int) bool {
-    ni := n[i] - float64(int(n[i] / 100000.0) * 100000)
-    nj := n[j] - float64(int(n[j] / 100000.0) * 100000)
-    return ni < nj
-}
-
-func (n intList) Swap(i, j int) {
-    currenti := int(int(n[i]) / 1000000000)
-    ix, iy := getxy(currenti)
-    currentj := int(int(n[j]) / 1000000000)
-    jx, jy := getxy(currentj)
-    // rxi := int(int(n[i]) % 1000000000 / 100000)
-    // rxj := int(int(n[j]) % 1000000000 / 100000)
-    n[i], n[j] = n[j], n[i]
-    Rx[jx][jy] = i
-    Rx[ix][iy] = j
-    // n[i] += float64(i - rxj) * 100000.0
-    // n[j] += float64(j - rxi) * 100000.0
-}
-
-func (n *intList) Push(x interface{}) {
-    nd := x.(float64)
-    *n = append(*n, nd)
-}
-
-func (n *intList) Pop() interface{} {
-    s := *n
-    last := len(s) - 1
-    r := s[last]
-    *n = s[:last]
-    return r
-}
-
-func (g *Game) dijkstra3() {
-    // init arrays
-    endNode := -1
-    g.DijkstraRecoveryCosts3 = make([][][][]float64, g.Width)
-    g.DijkstraRecoveryPaths3 = make([][][][]int, g.Width)
-    g.DijkstraRecoveryDone3 = make([][][][]bool, g.Width)
-    TDist := make([][]float64, g.Width)
-    // Dist := make([][]float64, g.Width)
-    Prev := make([][]int, g.Width)
-    Rx = make([][]int, g.Width)
-    costMap := make([][]float64, g.Width)
-    nodes := make([]*Node2, g.Width * g.Height)
-    for x := 0; x < g.Width; x++ {
-        g.DijkstraRecoveryCosts3[x] = make([][][]float64, g.Height)
-        g.DijkstraRecoveryPaths3[x] = make([][][]int, g.Height)
-        g.DijkstraRecoveryDone3[x] = make([][][]bool, g.Width)
-        TDist[x] = make([]float64, g.Height)
-        // Dist[x] = make([]float64, g.Height)
-        Prev[x] = make([]int, g.Height)
-        Rx[x] = make([]int, g.Height)
-        costMap[x] = make([]float64, g.Height)
-        for y := 0; y < g.Height; y++ {
-            g.DijkstraRecoveryCosts3[x][y] = make([][]float64, g.Width)
-            g.DijkstraRecoveryPaths3[x][y] = make([][]int, g.Width)
-            g.DijkstraRecoveryDone3[x][y] = make([][]bool, g.Width)
-            costMap[x][y] = g.StrengthMap1[x][y] / g.ProductionMap01[x][y]
-            nodes[x * g.Height + y] = &Node2{}
-            for a := 0; a < g.Width; a++ {
-                g.DijkstraRecoveryCosts3[x][y][a] = make([]float64, g.Height)
-                g.DijkstraRecoveryPaths3[x][y][a] = make([]int, g.Height)
-                g.DijkstraRecoveryDone3[x][y][a] = make([]bool, g.Width)
-                for b := 0; b < g.Height; b++ {
-                    g.DijkstraRecoveryCosts3[x][y][a][b] = math.Inf(1)
-                }
-            }
-        }
-    }
-    // log.Println("initdone")
-    for startNode := 0; startNode < g.Width * g.Height; startNode ++ {
-        log.Println("startNode")
-        log.Println(startNode)
-
-        vx, vy := g.getxy(startNode)
-
-        var unvisited nd2List
-        var n *Node2
-        // Reset values
-        for x := 0; x < g.Width; x++ {
-            for y := 0; y < g.Height; y++ {
-                n = nodes[x * g.Height + y]
-                n.V = x * g.Height + y
-                n.TDist = math.Inf(1)
-                n.Rx = -1
-
-                // TDist[x][y] = math.Inf(1)
-                Prev[x][y] = -1
-                // Rx[x][y] = -1
-                // Dist[x][y] = math.Inf(1)
-
-                if g.DijkstraRecoveryDone3[vx][vy][x][y] {
-                    // We've explored this cell before. set cost and add to unvisited
-                    nodes[x * g.Height + y].TDist = g.DijkstraRecoveryCosts3[vx][vy][x][y]
-                    // log.Println("rx")
-                    // log.Println(heapValue)
-                    heap.Push(&unvisited, nodes[x * g.Height + y])
-                }
-            }
-        }
-        // log.Println("reset")
-        var neighbor *Node2
-        var cost, nDist float64
-        current := nodes[startNode]
-        cx, cy := g.getxy(current.V)
-        current.TDist = 0
-        // log.Println("getcurrent")
-
-        for {
-            log.Println("current.v")
-            log.Println(current.V)
-            log.Println("cur Dist")
-            log.Println(current.TDist)
-            // log.Println("start")
-            // log.Println(startNode)
-            // log.Println(Rx)
-            // 3. For the current node, consider all of its unvisited neighbors and calculate their tentative distances. Compare the newly calculated tentative distance to the current assigned value and assign the smaller one. For example, if the current node A is marked with a distance of 6, and the edge connecting it with a neighbor B has length 2, then the distance to B (through A) will be 6 + 2 = 8. If B was previously marked with a distance greater than 8 then change it to 8. Otherwise, keep the current value.
-
+            // 2 for each vertex v
+            // 3    dist[v][v] ← 0
+            dist[x][y][x][y] = 0
+            // 4 for each edge (u,v)
+            // 5    dist[u][v] ← w(u,v)  // the weight of the edge (u,v)
             // North
-            nx, ny := cx, (cy - 1 + g.Height) % g.Height
-            neighbor = nodes[nx * g.Height + ny]
-            // log.Println("North")
-            // log.Println(nx)
-            // log.Println(ny)
-            if !g.DijkstraRecoveryDone3[vx][vy][nx][ny] {
-                // log.Println("done")
-                cost = costMap[nx][ny]
-                // log.Println("cost")
-                nDist = current.TDist + cost
-                log.Println("n nDist")
-                log.Println(nDist)
-                log.Println("north neigh nDist")
-                log.Println(neighbor.TDist)
-                // log.Println("ndist")
-                if nDist < neighbor.TDist {
-                    neighbor.TDist = nDist
-                    // log.Println("tdist")
-                    Prev[nx][ny] = current.V
-                    // log.Println("prev")
-                    log.Println("north nrx")
-                    log.Println(neighbor.Rx)
-                    if neighbor.Rx < 0 {
-                        log.Println("prepush")
-                        heap.Push(&unvisited, neighbor)
-                        // log.Println("push")
-                    } else {
-                        // log.Println("prefix")
-                        heap.Fix(&unvisited, neighbor.Rx)
-                        // log.Println("fix")
-                    }
-                }
-            }
+            ny := (y - 1 + len(costs[x])) % len(costs[x])
+            dist[x][y][x][ny] = costs[x][ny]
             // South
-            nx, ny = cx, (cy + 1) % g.Height
-            neighbor = nodes[nx * g.Height + ny]
-            // log.Println("South")
-            // log.Println(nx)
-            // log.Println(ny)
-            if !g.DijkstraRecoveryDone3[vx][vy][nx][ny] {
-                // log.Println("done")
-                cost = costMap[nx][ny]
-                // log.Println("cost")
-                nDist = current.TDist + cost
-                log.Println("s nDist")
-                log.Println(nDist)
-                log.Println("sorth neigh nDist")
-                log.Println(neighbor.TDist)
-                // log.Println("ndist")
-                if nDist < neighbor.TDist {
-                    neighbor.TDist = nDist
-                    // log.Println("tdist")
-                    Prev[nx][ny] = current.V
-                    // log.Println("prev")
-                    if neighbor.Rx < 0 {
-                        // log.Println("prepush")
-                        // log.Println(heapValue)
-                        heap.Push(&unvisited, neighbor)
-                        // log.Println("push")
-                    } else {
-                        // log.Println("prefix")
-                        heap.Fix(&unvisited, neighbor.Rx)
-                        // log.Println("fix")
-                    }
-                }
-            }
+            ny = (y + 1) % len(costs[x])
+            dist[x][y][x][ny] = costs[x][ny]
             // West
-            nx, ny = (cx - 1 + g.Width) % g.Width, cy
-            neighbor = nodes[nx * g.Height + ny]
-            // log.Println("West")
-            // log.Println(nx)
-            // log.Println(ny)
-            if !g.DijkstraRecoveryDone3[vx][vy][nx][ny] {
-                // log.Println("done")
-                cost = costMap[nx][ny]
-                // log.Println("cost")
-                nDist = current.TDist + cost
-                // log.Println("ndist")
-                if nDist < neighbor.TDist {
-                    neighbor.TDist = nDist
-                    // log.Println("tdist")
-                    Prev[nx][ny] = current.V
-                    // log.Println("prev")
-                    // log.Println("west nrx")
-                    // log.Println(neighbor.Rx)
-                    if neighbor.Rx < 0 {
-                        // log.Println("prepush")
-                        // log.Println(heapValue)
-                        heap.Push(&unvisited, neighbor)
-                        // log.Println("push")
-                    } else {
-                        // log.Println("prefix")
-                        heap.Fix(&unvisited, neighbor.Rx)
-                        // log.Println("fix")
-                    }
-                }
-            }
+            nx := (x - 1 + len(costs)) % len(costs)
+            dist[x][y][nx][y] = costs[nx][y]
             // East
-            nx, ny = (cx + 1) % g.Width, cy
-            neighbor = nodes[nx * g.Height + ny]
-            // log.Println("East")
-            // log.Println(nx)
-            // log.Println(ny)
-            if !g.DijkstraRecoveryDone3[vx][vy][nx][ny] {
-                // log.Println("done")
-                cost = costMap[nx][ny]
-                // log.Println("cost")
-                nDist = current.TDist + cost
-                // log.Println("ndist")
-                if nDist < neighbor.TDist {
-                    neighbor.TDist = nDist
-                    // log.Println("tdist")
-                    Prev[nx][ny] = current.V
-                    // log.Println("prev")
-                    if neighbor.Rx < 0 {
-                        // log.Println("prepush")
-                        // log.Println(heapValue)
-                        heap.Push(&unvisited, neighbor)
-                        // log.Println("push")
-                    } else {
-                        // log.Println("prefix")
-                        heap.Fix(&unvisited, neighbor.Rx)
-                        // log.Println("fix")
+            nx = (x + 1 + len(costs)) % len(costs)
+            dist[x][y][nx][y] = costs[nx][y]
+        }
+    }
+    // 6 for k from 1 to |V|
+    for x := 0; x < len(dist); x++ {
+        for y := 0; y < len(dist[x]); y++ {
+            // 7 for i from 1 to |V|
+            for i := 0; i < len(dist); i++ {
+                for j := 0; j < len(dist[i]); j++ {
+                    // 8 for j from 1 to |V|
+                    for s := 0; s < len(dist); s++ {
+                        for t := 0; t < len(dist[s]); t++ {
+                            // if dist[i][j] > dist[i][k] + dist[k][j]
+                            if dist[i][j][s][t] > dist[i][j][x][y] + dist[x][y][s][t] {
+                                // dist[i][j] ← dist[i][k] + dist[k][j]
+                                dist[i][j][s][t] = dist[i][j][x][y] + dist[x][y][s][t]
+                            }
+                        }
                     }
                 }
             }
-            // 4. When we are done considering all of the neighbors of the current node, mark the current node as visited and remove it from the unvisited set. A visited node will never be checked again.
-            g.DijkstraRecoveryDone3[vx][vy][cx][cy] = true
-            if endNode == -1 { // || current == endNode {
-                // Record path and distance for return value
-                g.DijkstraRecoveryCosts3[vx][vy][cx][cy] = current.TDist
-                // 5. If the destination node has been marked visited (when planning a route between two specific nodes) or if the smallest tentative distance among the nodes in the unvisited set is infinity (when planning a complete traversal; occurs when there is no connection between the initial node and remaining unvisited nodes), then stop. The algorithm has finished.
-                if endNode != -1 {
-                    continue
-                }
-            }
-            if len(unvisited) == 0 {
-                break  // No more reachable nodes
-            }
-            // 6. Otherwise, select the unvisited node that is marked with the smallest tentative distance, set it as the new "current node", and go back to step 3.
-            // log.Println("popping")
-            current = heap.Pop(&unvisited).(*Node2)
-            // cx, cy = g.getxy(current.V)
-            log.Println("popok")
-            log.Println(current.V)
-            // log.Println(cx)
-            // log.Println(cy)
         }
-
-
     }
+    return dist
 
-    return
 }
-
-
-type Node2 struct {
-    V int
-    TDist float64  // tentative distance
-    // Prev *Node
-    // Done bool  // True when Tdist and Prev represent the shortest path
-    Rx int  // heap.Remove index
-}
-
-
-// ndList implements a container/heap
-type nd2List []*Node2
-
-func (n nd2List) Len() int {
-    return len(n)
-}
-
-func (n nd2List) Less(i, j int) bool {
-    return n[i].TDist < n[j].TDist
-}
-
-func (n nd2List) Swap(i, j int) {
-    n[i], n[j] = n[j], n[i]
-    n[i].Rx = i
-    n[j].Rx = j
-}
-
-func (n *nd2List) Push(x interface{}) {
-    nd := x.(*Node2)
-    nd.Rx = len(*n)
-    *n = append(*n, nd)
-}
-
-func (n *nd2List) Pop() interface{} {
-    s := *n
-    last := len(s) - 1
-    r := s[last]
-    *n = s[:last]
-    r.Rx = -1
-    return r
-}
-
