@@ -1,6 +1,9 @@
 History
 --------
-Version 48 - ?? / ???? - mu: , sigma: - January 16, 2017
+Version 49 - ?? / ???? - mu: , sigma: - January 16, 2017
+* Remove a missed print map option
+
+Version 48 - 1331 / 1367 - mu: 10.77, sigma: 1.09 - January 16, 2017
 * Completely rebuilt bot (twice). Go didn't work out very well.
 * Single phase bot with single heuristic that drives production vs combat
 * Cells beyond border provide value to border cells
