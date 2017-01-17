@@ -16,9 +16,9 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v48"
+botname = "shummie v48-7-1"
 strength_buffer = 0
-print_maps = False
+print_maps = True
 
 
 def print_map(npmap, name):
@@ -131,8 +131,8 @@ class Game:
         self.buildup = 5
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         # self.pre_combat_threshold = -3
-        # self.combat_radius = 6
-        # self.production_cells_out = 15
+        self.combat_radius = 6
+        self.production_cells_out = 6
         # self.phase = 0
         # Find the "global max"
         # self.global_max_square = None
@@ -453,6 +453,22 @@ class Game:
                 continue
             self.attack_cell(square, 1)
 
+        combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
+        combat_distance_matrix = self.flood_fill(combat_zone_squares, self.combat_radius, True)
+        combat_distance_matrix[combat_distance_matrix == -1] = 0
+        combat_distance_matrix[combat_distance_matrix == 1] = 0
+        combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
+        combat_squares.sort(key=lambda x: x.strength, reverse=True)
+
+        for square in combat_squares:
+            if (square.strength > (square.production * self.buildup)) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+                # self.move_towards_map(square, self.distance_from_combat_zone)
+                self.move_towards_map_old(square, combat_distance_matrix)
+            elif square.strength >= square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
+                self.move_towards_map_old(square, combat_distance_matrix)
+            else:
+                self.make_move(square, STILL, -1)
+
     def get_moves_breakthrough(self):
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
         # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
@@ -623,6 +639,18 @@ class Game:
             square.target = square.neighbors[int(direction)]
             square.target.moving_here.append(square)
             # square.far_target = far_target
+
+    def move_towards_map_old(self, square, distance_map, through_friendly=True):
+        current_distance = distance_map[square.x, square.y]
+        possible_moves = []
+        for n in square.neighbors:
+            if self.is_owned_map[n.x, n.y]:
+                if distance_map[n.x, n.y] < current_distance:
+                    possible_moves.append(n)
+        if len(possible_moves) > 0:
+            random.shuffle(possible_moves)
+            possible_moves.sort(key=lambda sq: self.enemy_strength_map[4, sq.x, sq.y], reverse=True)
+            self.move_square_to_target(square, possible_moves[0], True)
 
     def move_square_to_target(self, source, destination, through_friendly):
         # Get the distance matrix that we will use to determine movement.

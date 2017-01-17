@@ -16,9 +16,9 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v48"
+botname = "shummie v48-5-3"
 strength_buffer = 0
-print_maps = False
+print_maps = True
 
 
 def print_map(npmap, name):
@@ -131,7 +131,7 @@ class Game:
         self.buildup = 5
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         # self.pre_combat_threshold = -3
-        # self.combat_radius = 6
+        self.combat_radius = 5
         # self.production_cells_out = 15
         # self.phase = 0
         # Find the "global max"
@@ -151,6 +151,9 @@ class Game:
 
         elif self.my_production_sum / self.next_highest_production_sum > 1.1:
             self.buildup += 1
+
+        if np.sum(self.combat_zone_map) > 3:
+            self.phase = 1
 
     def create_one_time_maps(self):
         # self.distance_map = self.create_distance_map()
@@ -435,7 +438,7 @@ class Game:
     def get_moves(self):
 
         self.attack_borders()
-        self.get_moves_breakthrough()
+
         self.move_inner_squares()
 
     def attack_borders(self):
@@ -445,13 +448,43 @@ class Game:
         potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices]
 
         # Sort targets by enemy strength then strength?
-        potential_targets.sort(key=lambda x: self.distance_from_enemy[x.x, x.y])
+        potential_targets.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
 
         for square in potential_targets:
             if (square.x + square.y) % 2 == game.frame % 2:
                 # Off parity square, don't force an attack (is this actually useful?)
                 continue
             self.attack_cell(square, 1)
+
+        # self.get_moves_breakthrough()
+
+        combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
+        combat_distance_matrix = self.flood_fill(combat_zone_squares, self.combat_radius, True)
+        combat_distance_matrix[combat_distance_matrix == -1] = 0
+        combat_distance_matrix[combat_distance_matrix == 1] = 0
+        combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
+        combat_squares.sort(key=lambda x: x.strength, reverse=True)
+
+        for square in combat_squares:
+            if (square.strength > (square.production * (self.buildup + 1))) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+                # self.move_towards_map(square, self.distance_from_combat_zone)
+                self.move_towards_map_old(square, combat_distance_matrix)
+            elif square.strength >= square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
+                self.move_towards_map_old(square, combat_distance_matrix)
+            else:
+                self.make_move(square, STILL, -1)
+
+    def move_towards_map_old(self, square, distance_map, through_friendly=True):
+        current_distance = distance_map[square.x, square.y]
+        possible_moves = []
+        for n in square.neighbors:
+            if self.is_owned_map[n.x, n.y]:
+                if distance_map[n.x, n.y] < current_distance:
+                    possible_moves.append(n)
+        if len(possible_moves) > 0:
+            random.shuffle(possible_moves)
+            possible_moves.sort(key=lambda sq: self.enemy_strength_map[4, sq.x, sq.y], reverse=True)
+            self.move_square_to_target(square, possible_moves[0], True)
 
     def get_moves_breakthrough(self):
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
@@ -497,11 +530,11 @@ class Game:
                 else:
                     d_map = self.flood_fill_to_border([s])
                     d_map[d_map == -1] = 9999
-                value_map = (self.value_map + d_map * 1.2) * self.border_map
+                value_map = (self.value_map + d_map * 1.4) * self.border_map
                 # Adjust combat squares
                 # value_map[np.nonzero(self.combat_zone_map)] = 6
                 value_map[np.nonzero(self.combat_zone_map)] = avg_border_val / 4
-                value_map += d_map * 1.1 * self.combat_zone_map
+                value_map += d_map * 1.3 * self.combat_zone_map
 
                 # cells that we zeroed out are set to 9999. There's a small tiny chance that a square is actually worth 0. If so, oops
                 value_map[value_map == 0] = 9999
@@ -519,20 +552,14 @@ class Game:
                 elif self.distance_between(s, t) > 4:
                     self.move_square_to_target(s, t, True)
                 elif self.distance_between(s, t) > 1:
-                    if self.combat_zone_map[t.x, t.y]:
-                        if (s.x + s.y) % 2 == game.frame % 2:
-                            self.move_square_to_target(s, t, True)
-                        else:
-                            continue
-                    else:
-                        self.move_square_to_target(s, t, True)
+                    self.move_square_to_target(s, t, True)
                 else:
-                    if s.strength > t.strength:
+                    # if s.strength > t.strength:
                         # self.move_square_to_target(s, t, False)
-                        self.attack_cell(t, 1)
+                    self.attack_cell(t, 1)
 
                 # If we can capture this cell, we shouldn't have other cells move here?
-                self.value_map[t.x, t.y] += s.strength / 200
+                self.value_map[t.x, t.y] += s.strength / 50
 
     def distance_between(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -1088,7 +1115,7 @@ def game_loop():
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
 
-    # game.consolidate_strength()
+    game.consolidate_strength()
 
     collision_check = 998
     last_collision_check = 999

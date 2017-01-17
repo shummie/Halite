@@ -1,6 +1,13 @@
 History
 --------
-Version 47 - ?? / ???? - mu: , sigma: - January 11, 2017
+Version 48 - ?? / ???? - mu: , sigma: - January 16, 2017
+* Completely rebuilt bot (twice). Go didn't work out very well.
+* Single phase bot with single heuristic that drives production vs combat
+* Cells beyond border provide value to border cells
+* Cells only look 1 out to attack. No teamups.
+* I expect this to perform poorly. Testing to see how it does.
+
+Version 47 - 5 / 1367 - mu: 50.67, sigma: 0.69 - January 11, 2017
 * Utilize new heuristic (similar to global search) for general search
 * Try to smooth out hanging around borders to lessen overkill
 * Expand production range search

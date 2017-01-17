@@ -16,14 +16,14 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v48"
+botname = "shummie v48-2-1"
 strength_buffer = 0
-print_maps = False
+print_maps = True
 
 
 def print_map(npmap, name):
     directory = "Maps/"
-    if print_maps and (game.frame % 50 == 0 or game.frame == 1):
+    if print_maps:  # and (game.frame % 50 == 0 or game.frame == 1):
         np.savetxt(directory + name + str(game.frame) + ".txt", npmap)
 
 # ==============================================================================
@@ -99,7 +99,6 @@ class Game:
 
         # Reset the move_map
         self.move_map = np.ones((self.w, self.h)) * -1  # Could possibly expand this in the future to consider enemy moves...
-        self.move_map2 = np.ones((self.w, self.h)) * -1  # Could possibly expand this in the future to consider enemy moves...
 
         self.frame += 1
 
@@ -165,6 +164,7 @@ class Game:
         self.create_dijkstra_maps()
         end = time.time()
         logging.debug("Creating dijkstra maps: " + str(end - start))
+
 
     def create_distance_map(self):
         # Creates a distance map so that we can easily divide a map to get ratios that we are interested in
@@ -247,6 +247,7 @@ class Game:
         # end = time.time()
         # logging.debug("reshape dijkstra maps: " + str(end - start))
 
+
     def update(self):
         # start = time.time()
         self.update_maps()
@@ -264,7 +265,7 @@ class Game:
 
         self.update_border_maps()
         # start = time.time()
-        self.update_enemy_maps()
+        # self.update_enemy_maps()
         # end = time.time()
         # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
         # start = time.time()
@@ -327,18 +328,7 @@ class Game:
             self.distance_from_combat_zone = np.ones((self.w, self.h)) * 999
             self.distance_from_enemy = np.ones((self.w, self.h)) * 999
 
-    def update_enemy_maps(self):
-        self.enemy_strength_map = np.zeros((5, self.w, self.h))
-        self.enemy_strength_map[0] = self.strength_map * self.is_enemy_map
 
-        for x in range(len(self.enemy_strength_map)):
-            self.enemy_strength_map[x] = spread_n(self.enemy_strength_map[0], x)
-
-        self.own_strength_map = np.zeros((5, self.w, self.h))
-        self.own_strength_map[0] = self.strength_map * self.is_owned_map
-
-        for x in range(len(self.own_strength_map)):
-            self.own_strength_map[x] = spread_n(self.own_strength_map[0], x)
 
     def update_value_maps(self):
         base_value_map = np.divide(self.production_map_01, self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
@@ -356,9 +346,34 @@ class Game:
             tx, ty = np.unravel_index(gb_map.argmin(), (self.w, self.h))
             global_border_map[tx, ty] += base_value_map[g.x, g.y] / self.dij_recov_distance_map[g.x, g.y, tx, ty]
 
-        self.value_map = 1 / np.maximum(base_value_map + global_border_map * 1, 0.001)
+        self.value_map = 1 / np.maximum(base_value_map + global_border_map, 0.001)
         print_map(global_border_map, "global_border_")
         print_map(base_value_map, "base_value_")
+        print_map(self.value_map, "value_map_")
+
+
+    def update_value_maps2(self):
+        # Idea 2: All squares get assigned to a border square (closest) to add to it's value
+        base_value_map = np.divide(self.production_map_01, self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
+        # base_value_map[base_value_map == 0] = -9999
+        # recovery_cost_map = np.divide(self.strength_map, self.production_map_01) * (self.is_neutral_map - self.combat_zone_map)
+        # Add in global contributions
+        self.value_map = np.ones((self.w, self.h)) * 9999
+
+        global_bonus = np.zeros((self.w, self.h))
+        # potential_targets_indices = np.transpose(np.nonzero(self.border_map - self.combat_zone_map))
+        # potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices]
+        logging.debug("Frame: " + str(self.frame))
+        logging.debug(self.frame)
+        for b in self:
+            global_bonus[b.x, b.y] = np.sum(np.divide(base_value_map, np.maximum(self.dij_recov_distance_map[b.x, b.y], 1)))
+
+            # self.value_map[b.x, b.y] = 1 / (base_value_map[b.x, b.y]) - (b_global_bonus) * 2
+        self.value_map = 1 / (base_value_map + global_bonus)
+
+        # self.value_map[self.value_map == 0] = 0.001
+        print_map(global_bonus, "global_bonus_")
+        print_map(1 / np.maximum(base_value_map, 0.01), "base_value_map_")
         print_map(self.value_map, "value_map_")
 
     def flood_fill(self, sources, max_distance=999, friendly_only=True):
@@ -435,7 +450,6 @@ class Game:
     def get_moves(self):
 
         self.attack_borders()
-        self.get_moves_breakthrough()
         self.move_inner_squares()
 
     def attack_borders(self):
@@ -448,22 +462,10 @@ class Game:
         potential_targets.sort(key=lambda x: self.distance_from_enemy[x.x, x.y])
 
         for square in potential_targets:
-            if (square.x + square.y) % 2 == game.frame % 2:
-                # Off parity square, don't force an attack (is this actually useful?)
-                continue
+        #     if (square.x + square.y) % 2 == game.frame % 2:
+        #         # Off parity square, don't force an attack (is this actually useful?)
+        #         continue
             self.attack_cell(square, 1)
-
-    def get_moves_breakthrough(self):
-        # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
-        # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
-        # We are only looking at squares which are next to the enemy already.
-        potential_squares_indices = np.transpose(np.nonzero((self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] > 0)))
-        potential_squares = [self.squares[c[0], c[1]] for c in potential_squares_indices]
-        # We only want to bust through if we have a lot of strength here.
-        # logging.debug(str(self.own_strength_map[4]))
-        for square in potential_squares:
-            if self.own_strength_map[4, square.x, square.y] > 750 and (self.own_strength_map[4, square.x, square.y] > 1.5 * self.enemy_strength_map[4, square.x, square.y]):
-                self.attack_cell(square, 1)
 
     def move_inner_squares(self):
         idle_squares_indices = np.transpose(np.nonzero((self.move_map == -1) * self.is_owned_map))
@@ -472,36 +474,19 @@ class Game:
         if len(idle_squares) == 0:
             return
         # Move squares closer to the border first.
-        idle_squares.sort(key=lambda sq: self.distance_from_border[sq.x, sq.y])
+        # idle_squares.sort(key=lambda sq: self.distance_from_border[sq.x, sq.y])
         idle_squares.sort(key=lambda sq: sq.strength, reverse=True)
 
-        avg_border_val = np.sum(self.value_map * (self.border_map - self.combat_zone_map)) / np.sum(self.border_map - self.combat_zone_map)
-
         for s in idle_squares:
-            if s.strength > 240:
-                # High square strengths are necessary to either reinforce combat zones, or should be used to capture the closest cell as to hopefully lower production wastage.
-                # If we're at a border, then we should try to capture the border cell
-                if self.distance_from_border[s.x, s.y] == 1:
-                    targets = [x for x in s.neighbors if (x.owner == 0 and self.production_map[x.x, x.y] > 0)]
-                    targets.sort(key=lambda x: self.strength_map[x.x, x.y] / self.production_map_01[x.x, x.y])
-                    if len(targets) > 0:
-                        self.attack_cell(targets[0], 1)
-                        self.value_map[targets[0].x, targets[0].y] += 2
-                        continue
-
             if s.strength > (s.production * self.buildup) and s.moving_here == []:
                 # we want to move towards the border square with the LOWEST value.
                 # Gets base values for border squares
-                if np.sum(self.is_owned_map) > 100:
-                    d_map = self.distance_map_no_decay[s.x, s.y]
-                else:
-                    d_map = self.flood_fill_to_border([s])
-                    d_map[d_map == -1] = 9999
-                value_map = (self.value_map + d_map * 1.2) * self.border_map
+                d_map = self.flood_fill_to_border([s])
+                d_map[d_map == -1] = 9999
+                value_map = (self.value_map + d_map) * self.border_map
                 # Adjust combat squares
-                # value_map[np.nonzero(self.combat_zone_map)] = 6
-                value_map[np.nonzero(self.combat_zone_map)] = avg_border_val / 4
-                value_map += d_map * 1.1 * self.combat_zone_map
+                value_map[np.nonzero(self.combat_zone_map)] = 10
+                value_map += d_map * 1 * self.combat_zone_map
 
                 # cells that we zeroed out are set to 9999. There's a small tiny chance that a square is actually worth 0. If so, oops
                 value_map[value_map == 0] = 9999
@@ -510,29 +495,21 @@ class Game:
                 t = self.squares[tx, ty]
 
                 # If we're closer to the border, enforce parity movement
-                if self.distance_between(s, t) < 3 and self.distance_from_combat_zone[s.x, s.y] < 4:
-                    if (s.x + s.y) % 2 != game.frame % 2:
-                        continue
+                # if self.distance_between(s, t) < 3 and self.distance_from_combat_zone[s.x, s.y] < 4:
+                #     if (s.x + s.y) % 2 != game.frame % 2:
+                #         continue
 
                 if self.distance_between(s, t) > 14:
                     self.move_square_to_target_simple(s, t, True)
                 elif self.distance_between(s, t) > 4:
-                    self.move_square_to_target(s, t, True)
+                        self.move_square_to_target(s, t, True)
                 elif self.distance_between(s, t) > 1:
-                    if self.combat_zone_map[t.x, t.y]:
-                        if (s.x + s.y) % 2 == game.frame % 2:
-                            self.move_square_to_target(s, t, True)
-                        else:
-                            continue
-                    else:
+                    if (s.x + s.y) % 2 == game.frame % 2:
                         self.move_square_to_target(s, t, True)
                 else:
                     if s.strength > t.strength:
                         # self.move_square_to_target(s, t, False)
                         self.attack_cell(t, 1)
-
-                # If we can capture this cell, we shouldn't have other cells move here?
-                self.value_map[t.x, t.y] += s.strength / 200
 
     def distance_between(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -599,9 +576,8 @@ class Game:
                 cells_out += 1
         return False
 
-    def make_move(self, square, direction, direction2=-1):
-        self.move_map[square.x, square.y] = int(direction)
-        self.move_map2[square.x, square.y] = int(direction2)
+    def make_move(self, square, direction):
+        self.move_map[square.x, square.y] = direction
 
         if direction == -1:  # Reset the square move
             if square.target is not None:
@@ -620,7 +596,7 @@ class Game:
 
         square.move = direction
         if direction != STILL:
-            square.target = square.neighbors[int(direction)]
+            square.target = square.neighbors[direction]
             square.target.moving_here.append(square)
             # square.far_target = far_target
 
@@ -642,12 +618,52 @@ class Game:
 
         # There should be at most 2 cells in path_choices
         path_choices.sort(key=lambda x: x[1].production)
-        path_choices.sort(key=lambda x: len(x[1].moving_here), reverse=True)
 
-        if len(path_choices) > 1:
-            self.make_move(source, path_choices[0][0], path_choices[1][0])
-        else:
-            self.make_move(source, path_choices[0][0])
+        # Try simple resolution
+        for (direction, target) in path_choices:
+            future_strength = 0
+            if target.owner == self.my_id:
+                if target.move == -1 or target.move == STILL:
+                    future_strength = target.strength  # + target.production
+            for sq in target.moving_here:
+                future_strength += sq.strength
+            if future_strength + source.strength <= 255 + strength_buffer:
+                self.make_move(source, direction)
+                return True
+
+        for (direction, target) in path_choices:
+            # Ok, can we move the cell that we are moving to:
+            if target.owner == self.my_id:
+                # Yes. We can, but is the cell staying still? If not, then we can't do anything
+                if target.move == STILL or target.move == -1:
+                    # Ok, let's make sure that moving this piece actually does something.
+                    future_strength = source.strength
+                    for sq in target.moving_here:
+                        future_strength += sq.strength
+                    if future_strength <= 255 + strength_buffer:
+                        # Ok, let's move the target square.
+                        self.make_move(source, direction)  # Queue the move up, undo if it doesn't work
+                        n_directions = list(range(4))
+                        random.shuffle(n_directions)
+                        n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
+                        n_neighbors.sort(key=lambda x: x[1].production)
+                        for (n_d, n) in n_neighbors:
+                            # n = target.neighbors[n_d]
+                            if n.owner == self.my_id and self.distance_from_combat_zone[n.x, n.y] > 3:
+                                # Can we move into this square safely?
+                                future_n_t_strength = target.strength
+                                if n.move == STILL or n.move == -1:
+                                    future_n_t_strength += n.strength  # + n.production
+                                for n_moving in n.moving_here:
+                                    future_n_t_strength += n_moving.strength
+                                if future_n_t_strength <= 255 + strength_buffer:
+                                    success = self.move_square_to_target_simple(target, n, True)
+                                    if success:
+                                        return True
+                        # TODO: Logic to attempt to capture a neutral cell if we want.
+                        self.make_move(source, -1)
+        # Nothing to do left
+        return False
 
     def move_square_to_target_simple(self, source, destination, through_friendly):
         # For large distances, we can probably get away with simple movement rules.
@@ -759,12 +775,62 @@ class Game:
                 path_choices.append(ns_move)
                 path_choices.append(ew_move)
 
-        path_choices.sort(key=lambda x: x[1].production)
-        path_choices.sort(key=lambda x: len(x[1].moving_here), reverse=True)
-        if len(path_choices) > 1:
-            self.make_move(source, path_choices[0][0], path_choices[1][0])
-        else:
-            self.make_move(source, path_choices[0][0])
+        for (direction, target) in path_choices:
+            future_strength = 0
+            if target.owner == self.my_id:
+                if target.move == -1 or target.move == STILL:
+                    future_strength = target.strength  # + target.production
+            for sq in target.moving_here:
+                future_strength += sq.strength
+            if future_strength + source.strength <= 255 + strength_buffer:
+                self.make_move(source, direction)
+                return True
+
+        # Try simple resolution
+        for (direction, target) in path_choices:
+            future_strength = 0
+            if target.owner == self.my_id:
+                if target.move == -1 or target.move == STILL:
+                    future_strength = target.strength  # + target.production
+            for sq in target.moving_here:
+                future_strength += sq.strength
+            if future_strength + source.strength <= 255 + strength_buffer:
+                self.make_move(source, direction)
+                return True
+
+        for (direction, target) in path_choices:
+            # Ok, can we move the cell that we are moving to:
+            if target.owner == self.my_id:
+                # Yes. We can, but is the cell staying still? If not, then we can't do anything
+                if target.move == STILL or target.move == -1:
+                    # Ok, let's make sure that moving this piece actually does something.
+                    future_strength = source.strength
+                    for sq in target.moving_here:
+                        future_strength += sq.strength
+                    if future_strength <= 255 + strength_buffer:
+                        # Ok, let's move the target square.
+                        self.make_move(source, direction)  # Queue the move up, undo if it doesn't work
+                        n_directions = list(range(4))
+                        random.shuffle(n_directions)
+                        n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
+                        n_neighbors.sort(key=lambda x: x[1].production)
+                        for (n_d, n) in n_neighbors:
+                            # n = target.neighbors[n_d]
+                            if n.owner == self.my_id and self.distance_from_combat_zone[n.x, n.y] > 3:
+                                # Can we move into this square safely?
+                                future_n_t_strength = target.strength
+                                if n.move == STILL or n.move == -1:
+                                    future_n_t_strength += n.strength  # + n.production
+                                for n_moving in n.moving_here:
+                                    future_n_t_strength += n_moving.strength
+                                if future_n_t_strength <= 255 + strength_buffer:
+                                    success = self.move_square_to_target_simple(target, n, True)
+                                    if success:
+                                        return True
+                        # TODO: Logic to attempt to capture a neutral cell if we want.
+                        self.make_move(source, -1)
+        # Nothing to do left
+        return False
 
     def last_resort_strength_check(self):
         # Calculates the projected strength map and identifies squares that are violating it.
@@ -783,141 +849,41 @@ class Game:
         # Get a list of squares that are over the cap
         violation_indices = np.transpose(np.nonzero((projected_strength_map > 255 + strength_buffer)))
         violation_squares = [self.squares[c[0], c[1]] for c in violation_indices]
-        violation_squares.sort(key=lambda s: self.distance_from_border[s.x, s.y])
         violation_count = len(violation_squares)
 
-        for s in violation_squares:
-            if (s.move == -1 or s.move == STILL):
-                if ((projected_strength_map[s.x, s.y] - s.strength) <= (255 + strength_buffer)) or ((s.strength > (s.production * self.buildup)) and ((s.x + s.y) % 2 == game.frame % 2)):
-                    # Moving out of the way will solve this collision. Let's try not to cause another collision.
-                    pp = []
-                    for d in range(0, 4):
-                        n = s.neighbors[d]
-                        if n.owner == self.my_id and ((projected_strength_map[n.x, n.y] + s.strength) <= (255 + strength_buffer)):
-                            pp.append((d, projected_strength_map[n.x, n.y] + s.strength))
-                        elif n.owner == 0 and s.strength > (2 * n.strength) and n.production > 2:
-                            # We're ok attacking a cell if it produces at least 3.
-                            pp.append((d, 300 - (n.strength / n.production)))  # A hack to deprioritize attacking a neighbor
-                    pp.sort(key=lambda x: x[1])
-                    if len(pp) > 0:
-                        self.make_move(s, pp[0][0])
-                        # Update the projected strength map for the move
-                        projected_strength_map[s.x, s.y] -= s.strength
-                        dx, dy = get_offset(pp[0][0])
-                        projected_strength_map[(s.x + dx) % self.w, (s.y + dy) % self.h] += s.strength
-            if projected_strength_map[s.x, s.y] > (255 + strength_buffer):
-                # We've moved THIS cell if it's slated to move but it's still causing a problem. We need to move a DIFFERENT cell.
-                # Check to see if a square that's moving here has a secondary move that we can use.
-                has_another_move_would_resolve = []
-                would_resolve = []
-                for mh in s.moving_here:
-                    if self.move_map2[mh.x, mh.y] != -1:
-                        # Will actually moving this cell by itself solve the problem?
-                        if (projected_strength_map[s.x, s.y] - mh.strength) <= (255 + strength_buffer):
-                            # Ok, is the alternative move a valid move that won't cause strength issues?
-                            would_resolve.append(mh)
-                            dx, dy = get_offset(self.move_map2[mh.x, mh.y])
-                            if projected_strength_map[(mh.x + dx) % self.w, (mh.y + dy) % self.h] + mh.strength <= (255 + strength_buffer):
-                                has_another_move_would_resolve.append(mh)
-                if len(has_another_move_would_resolve) > 0:
-                    # Moving this cell, if valid, will resolve any collision.
-                    has_another_move_would_resolve.sort(key=lambda s: s.strength)
-                    t = has_another_move_would_resolve[0]
-                    self.make_move(t, self.move_map2[t.x, t.y], self.move_map[t.x, t.y])  # Preserve alternative move just in case.
-                    projected_strength_map[s.x, s.y] -= t.strength
-                    dx, dy = get_offset(self.move_map2[t.x, t.y])
-                    projected_strength_map[(t.x + dx) % self.w, (t.y + dy) % self.h] += t.strength
-                    continue
-                # Ok, so we can't get any free wins. Identify the cells that if moved would cause this to be ok.
-                if len(would_resolve) > 0:
-                    # Moving one of these cells would fix the issue, if we can find a suitable location for it.
-                    # Start with the smallest cells (Large strength cells get priority in where they go)
-                    would_resolve.sort(key=lambda s: s.strength)
-                    t = would_resolve[0]
-                    # look at all neighbors.
-                    valid_targets = []
-                    for d in range(0, 4):
-                        n = t.neighbors[d]
-                        if n.owner == 0 and (projected_strength_map[n.x, n.y] + t.strength) < (255 + strength_buffer):
-                            valid_targets.append((d, n))
-                    if len(valid_targets) > 0:
-                        valid_targets.sort(key=lambda s: projected_strength_map[s[1].x, s[1].y])
-                        self.make_move(t, valid_targets[0][0])
-                        projected_strength_map[s.x, s.y] -= t.strength
-                        dx, dy = get_offset(valid_targets[0][0])
-                        projected_strength_map[(t.x + dx) % self.w, (t.y + dy) % self.h] += t.strength
-                        continue
-                # Ok, MULTIPLE cells are causing the issue.
-                # Force cells to take alternative routes, then force cells to stay still until we are ok.
-                has_another_move = []
-                for mh in s.moving_here:
-                    if self.move_map2[mh.x, mh.y] != -1:
-                        has_another_move.append(mh)
-                has_another_move.sort(key=lambda s: s.strength)
-                for t in has_another_move:
-                    # Can we make the move?
-                    d = self.move_map2[t.x, t.y]
-                    dx, dy = get_offset(d)
-                    if (projected_strength_map[(t.x + dx) % self.w, (t.y + dy) % self.h] + t.strength) <= 255 + strength_buffer:
-                        # Make the move
-                        self.make_move(t, d, self.move_map[t.x, t.y])
-                        projected_strength_map[(t.x + dx) % self.w, (t.y + dy) % self.h] += t.strength
-                        projected_strength_map[s.x, s.y] -= t.strength
-                        if projected_strength_map[s.x, s.y] <= 255 + strength_buffer:
-                            break
-                # At this point, we've done everything we can. Force cells to STAY STILL until we are ok.
-                if projected_strength_map[s.x, s.y] > 255 + strength_buffer:
-                    # s.moving_here.sort(key=lambda x: x.strength)
-                    for mh in s.moving_here:
-                        self.make_move(mh, STILL, self.move_map[mh.x, mh.y])
-                        projected_strength_map[mh.x, mh.y] += mh.strength
-                        projected_strength_map[s.x, s.y] -= mh.strength
-                        if projected_strength_map[s.x, s.y] <= 255 + strength_buffer:
-                            break
-        if violation_count > 0:
-            np.savetxt("Maps/psmap_" + str(self.frame) + ".txt", projected_strength_map)
+        for square in violation_squares:
+            if square.owner == self.my_id and (square.move == -1 or square.move == STILL):
+                # We can try to move this square to an neighbor.
+                possible_paths = []
+                for d in range(0, 4):
+                    # Move to the lowest strength neighbor. this might cause a collision but we'll resolve it with multiple iterations
+                    n = square.neighbors[d]
+                    if n.owner == self.my_id:
+                        possible_paths.append((d, n, projected_strength_map[n.x, n.y]))
+                    else:
+                        # Try attacking a bordering cell
+                        if square.strength > (2 * n.strength) and n.production > 2:
+                            possible_paths.append((d, n, n.strength * 2))
+
+                possible_paths.sort(key=lambda x: x[2])
+                # Force a move there
+                if len(possible_paths) > 0:
+                    d, n = possible_paths[0][0], possible_paths[0][1]
+                    self.make_move(square, d)
+            else:
+                # We aren't the problem. one of the squares that's moving here is going to collide with us.
+                # How do we resolve this?
+                options_list = []
+                for n in square.neighbors:
+                    if n.owner == self.my_id:
+                        options_list.append((n, projected_strength_map[n.x, n.y]))
+                options_list.sort(key=lambda x: x[1])
+                # Let's try having the smallest one stay still instead
+                for opt in options_list:
+                    self.make_move(opt[0], STILL)
+                # self.make_move(options_list[0][0], STILL, None)
+
         return violation_count
-
-    def consolidate_strength(self):
-        # Attempts to move OFF squares into ON squares to consolidate strength.
-        # Look at all squares that are about 5 squares from a combat zone.
-
-        projected_strength_map = np.zeros((self.w, self.h))
-        # We only care about our moves.
-        for square in itertools.chain.from_iterable(self.squares):
-            if square.owner == self.my_id:
-                if square.move == -1 or square.move == STILL:
-                    projected_strength_map[square.x, square.y] += square.strength  # + square.production
-                else:
-                    dx, dy = get_offset(square.move)
-                    projected_strength_map[(square.x + dx) % self.w, (square.y + dy) % self.h] += square.strength
-
-        indices = np.transpose(np.nonzero((projected_strength_map > 255 + strength_buffer)))
-        squares = [self.squares[c[0], c[1]] for c in indices]
-
-        for x in range(self.w):
-            for y in range(self.h):
-                sq = self.squares[x, y]
-                if sq.owner == self.my_id:
-                    if self.distance_from_combat_zone[sq.x, sq.y] < 6:
-                        if (sq.x + sq.y) % 2 != (self.frame) % 2:
-                            continue
-
-                            # self.make_move(sq, STILL, self.move_map[sq.x, sq.y])
-                        else:
-                            # Try to consolidate.
-                            if sq.move != -1 and sq.move != 4:
-                                t = sq.target
-                                if len(t.moving_here) == 1:
-                                    tval = self.distance_from_combat_zone[t.x, t.y]
-                                    # Check friendly neighbors
-                                    for d in range(0, 4):
-                                        n = sq.neighbors[d]
-                                        if n != t and n.owner == self.my_id and self.distance_from_combat_zone[n.x, n.y] <= tval and len(n.moving_here) >= 1 and (projected_strength_map[n.x, n.y] + sq.strength) <= (255 + strength_buffer):
-                                            self.move_square_to_target_simple(sq, n, True)
-                                            projected_strength_map[n.x, n.y] += sq.strength
-                                            projected_strength_map[sq.x, sq.y] -= sq.strength
-                                            continue
 
 # ==============================================================================
 # Square class
@@ -977,7 +943,7 @@ class Square:
 
 
 def get_offset(direction):
-    return ((0, -1), (1, 0), (0, 1), (-1, 0), (0, 0))[int(direction)]
+    return ((0, -1), (1, 0), (0, 1), (-1, 0), (0, 0))[direction]
 
 
 def distance_between(x1, y1, x2, y2):
@@ -1005,38 +971,6 @@ def roll_y(M, y):
 def roll_xy(M, x, y):
     return np.roll(np.roll(M, x, 0), y, 1)
 
-
-def spread_n(M, n, decay=0, include_self=True):
-    # Takes a matrix M, and then creates an influence map by offsetting by N in every direction.
-    # Decay function is currently of the form exp(-decay * distance)
-    if include_self is True:
-        spread_map = np.copy(M)
-    else:
-        spread_map = np.zeros_like(M)
-    distance = 1
-    if decay != 0:
-        while distance <= n:
-            combos = get_all_d_away(distance)
-            decay_factor = math.exp(-decay * distance)
-            for c in combos:
-                spread_map += roll_xy(np.multiply(decay_factor, M), c[0], c[1])
-            distance += 1
-    else:  # decay = 0
-        while distance <= n:
-            combos = get_all_d_away(distance)
-            for c in combos:
-                spread_map += roll_xy(M, c[0], c[1])
-            distance += 1
-    return spread_map
-
-
-def get_all_d_away(d):
-    combos = []
-    for x in range(0, d + 1):
-        x_vals = list(set([x, -x]))
-        y_vals = list(set([d - x, -(d - x)]))
-        combos.extend(list(itertools.product(x_vals, y_vals)))
-    return list(set(combos))
 
 def rebase_map(map_a, total=True):
     # Takes a map and returns a rebased version where numpy.sum(map) = self.w * self.h
@@ -1087,8 +1021,6 @@ def game_loop():
     while collision_check < last_collision_check:
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
-
-    # game.consolidate_strength()
 
     collision_check = 998
     last_collision_check = 999
