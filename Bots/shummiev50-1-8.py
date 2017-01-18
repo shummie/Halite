@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v50"
+botname = "shummie v50-1-8"
 strength_buffer = 0
 print_maps = False
 
@@ -131,7 +131,7 @@ class Game:
         self.buildup = 5
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         # self.pre_combat_threshold = -3
-        self.combat_radius = 8
+        self.combat_radius = 4
         # self.production_cells_out = 15
         # self.phase = 0
         # Find the "global max"
@@ -279,7 +279,6 @@ class Game:
         self.update_value_maps()
         # end = time.time()
         # logging.debug("update_value_maps Frame: " + str(game.frame) + " : " + str(end - start))
-        self.update_controlled_influence_production_maps()
 
     def update_calc_maps(self):
         self.strength_map_01 = np.maximum(self.strength_map, 0.1)
@@ -367,14 +366,6 @@ class Game:
         print_map(base_value_map, "base_value_")
         print_map(self.value_map, "value_map_")
 
-    def update_controlled_influence_production_maps(self):
-        max_distance = 9
-        self.controlled_production_influence_map = np.zeros((max_distance + 1, self.w, self.h))
-        self.controlled_production_influence_map[0] = self.production_map * (self.is_enemy_map + self.is_owned_map)
-        for distance in range(1, max_distance + 1):
-            self.controlled_production_influence_map[distance] = spread_n(self.controlled_production_influence_map[distance - 1], 1)
-            self.controlled_production_influence_map[distance] = rebase_map(self.controlled_production_influence_map[distance - 1], False)        
-        
     def flood_fill(self, sources, max_distance=999, friendly_only=True):
         q = sources
         distance_matrix = np.ones((self.w, self.h)) * -1
@@ -533,7 +524,7 @@ class Game:
                 # High square strengths are necessary to either reinforce combat zones, or should be used to capture the closest cell as to hopefully lower production wastage.
                 # If we're at a border, then we should try to capture the border cell
                 if self.distance_from_border[s.x, s.y] == 1:
-                    targets = [x for x in s.neighbors if (x.owner == 0 and self.production_map[x.x, x.y] > 2)]
+                    targets = [x for x in s.neighbors if (x.owner == 0 and self.production_map[x.x, x.y] > 0)]
                     targets.sort(key=lambda x: self.strength_map[x.x, x.y] / self.production_map_01[x.x, x.y])
                     if len(targets) > 0:
                         self.attack_cell(targets[0], 1)
@@ -551,10 +542,9 @@ class Game:
                 value_map = (self.value_map + d_map * 1.2) * self.border_map
                 # Adjust combat squares
                 # value_map[np.nonzero(self.combat_zone_map)] = 6
-                value_map[np.nonzero(self.combat_zone_map)] = avg_border_val
-                value_map += d_map ** 1.25 * self.combat_zone_map
-                value_map -= self.controlled_production_influence_map[5, s.x, s.y] * 4 * self.combat_zone_map
-                
+                value_map[np.nonzero(self.combat_zone_map)] = avg_border_val / 3
+                value_map += d_map * 1.1 * self.combat_zone_map
+
                 # cells that we zeroed out are set to 9999. There's a small tiny chance that a square is actually worth 0. If so, oops
                 value_map[value_map == 0] = 9999
 

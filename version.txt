@@ -1,6 +1,22 @@
 History
 --------
-Version 47 - ?? / ???? - mu: , sigma: - January 11, 2017
+Version 50 - ?? / ???? - mu: , sigma: - January 17, 2017
+* Stole some add'l code from the v46 prior bots.
+* Combat radius code added to force more cells to attack
+* Reverted back to old strength collision code.
+* Added an early game phase for the first five squares for minor improvements.
+
+Version 49 - 14 / 1369 - mu: 47.89, sigma: 0.7 - January 16, 2017
+* Remove a missed print map option
+
+Version 48 - 1331 / 1367 - mu: 10.77, sigma: 1.09 - January 16, 2017
+* Completely rebuilt bot (twice). Go didn't work out very well.
+* Single phase bot with single heuristic that drives production vs combat
+* Cells beyond border provide value to border cells
+* Cells only look 1 out to attack. No teamups.
+* I expect this to perform poorly. Testing to see how it does.
+
+Version 47 - 5 / 1367 - mu: 50.67, sigma: 0.69 - January 11, 2017
 * Utilize new heuristic (similar to global search) for general search
 * Try to smooth out hanging around borders to lessen overkill
 * Expand production range search

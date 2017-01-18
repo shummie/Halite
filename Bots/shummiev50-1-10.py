@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v50"
+botname = "shummie v50-1-10"
 strength_buffer = 0
 print_maps = False
 
@@ -131,7 +131,7 @@ class Game:
         self.buildup = 5
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         # self.pre_combat_threshold = -3
-        self.combat_radius = 8
+        self.combat_radius = 5
         # self.production_cells_out = 15
         # self.phase = 0
         # Find the "global max"
@@ -533,7 +533,7 @@ class Game:
                 # High square strengths are necessary to either reinforce combat zones, or should be used to capture the closest cell as to hopefully lower production wastage.
                 # If we're at a border, then we should try to capture the border cell
                 if self.distance_from_border[s.x, s.y] == 1:
-                    targets = [x for x in s.neighbors if (x.owner == 0 and self.production_map[x.x, x.y] > 2)]
+                    targets = [x for x in s.neighbors if (x.owner == 0 and self.production_map[x.x, x.y] > 0)]
                     targets.sort(key=lambda x: self.strength_map[x.x, x.y] / self.production_map_01[x.x, x.y])
                     if len(targets) > 0:
                         self.attack_cell(targets[0], 1)
@@ -552,7 +552,7 @@ class Game:
                 # Adjust combat squares
                 # value_map[np.nonzero(self.combat_zone_map)] = 6
                 value_map[np.nonzero(self.combat_zone_map)] = avg_border_val
-                value_map += d_map ** 1.25 * self.combat_zone_map
+                value_map += d_map * 1.2 * self.combat_zone_map
                 value_map -= self.controlled_production_influence_map[5, s.x, s.y] * 4 * self.combat_zone_map
                 
                 # cells that we zeroed out are set to 9999. There's a small tiny chance that a square is actually worth 0. If so, oops

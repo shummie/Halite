@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v50"
+botname = "shummie v51-2-1"
 strength_buffer = 0
 print_maps = False
 
@@ -131,7 +131,7 @@ class Game:
         self.buildup = 5
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         # self.pre_combat_threshold = -3
-        self.combat_radius = 8
+        self.combat_radius = 7
         # self.production_cells_out = 15
         # self.phase = 0
         # Find the "global max"
@@ -147,7 +147,7 @@ class Game:
         if self.phase == 0:
             if np.sum(self.is_owned_map) > 5:
                 self.phase = 1
-        
+
         if self.percent_owned > 0.6:
             self.buildup -= 1
             # self.pre_combat_threshold = 0
@@ -196,7 +196,7 @@ class Game:
         def get_cost_recov(cellnum):
             x = cellnum // self.h
             y = cellnum % self.h
-            return self.strength_map_1[x, y] / self.production_map_01[x, y]
+            return self.strength_map_1[x, y] / (self.production_map_01[x, y] ** 2)
 
         def get_cost_prod(cellnum):
             x = cellnum // self.h
@@ -258,7 +258,7 @@ class Game:
         # logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
         self.update_stats()
         self.update_configs()
-        
+
 
     def update_maps(self):
         print_map(self.strength_map, "strength_map")
@@ -347,9 +347,10 @@ class Game:
             self.own_strength_map[x] = spread_n(self.own_strength_map[0], x)
 
     def update_value_maps(self):
-        base_value_map = np.divide(self.production_map_01, self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
+        # base_value_map = np.divide(self.production_map_01, self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
+        base_value_map = np.divide(np.power(self.production_map_01, 2), self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)
         # Each neutral cell gets assigned to the closest border non-combat cell
-        global_targets_indices = np.transpose(np.nonzero(self.is_neutral_map - self.combat_zone_map))
+        global_targets_indices = np.transpose(np.nonzero((self.is_neutral_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)))
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
         # border_squares_indices = np.transpose(np.nonzero(self.border_map - self.combat_zone_map))
         # border_squares = [self.squares[c[0], c[1]] for c in border_squares_indices]
@@ -373,8 +374,8 @@ class Game:
         self.controlled_production_influence_map[0] = self.production_map * (self.is_enemy_map + self.is_owned_map)
         for distance in range(1, max_distance + 1):
             self.controlled_production_influence_map[distance] = spread_n(self.controlled_production_influence_map[distance - 1], 1)
-            self.controlled_production_influence_map[distance] = rebase_map(self.controlled_production_influence_map[distance - 1], False)        
-        
+            self.controlled_production_influence_map[distance] = rebase_map(self.controlled_production_influence_map[distance - 1], False)
+
     def flood_fill(self, sources, max_distance=999, friendly_only=True):
         q = sources
         distance_matrix = np.ones((self.w, self.h)) * -1
@@ -447,7 +448,7 @@ class Game:
         self.next_highest_production_sum = max(temp_production_sum)
 
     def get_moves(self):
-    
+
         if self.phase == 0:
             self.early_game_production()
 
@@ -462,7 +463,7 @@ class Game:
         tx, ty = np.unravel_index(ev_map.argmin(), (self.w, self.h))
         target = self.squares[tx, ty]
         self.attack_cell(target, 5)
-        
+
     def attack_borders(self):
         # get a list of border cells available for attack.
         # potential_targets_indices = np.transpose(np.nonzero(self.border_map))
@@ -481,7 +482,7 @@ class Game:
             elif (square.x + square.y) % 2 == game.frame % 2:
             #     # Off parity square, don't force an attack (is this actually useful?)
                 continue
-            else: 
+            else:
                 self.attack_cell(square, 1)
 
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
@@ -490,7 +491,7 @@ class Game:
         combat_distance_matrix[combat_distance_matrix == 1] = 0
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
         combat_squares.sort(key=lambda x: x.strength, reverse=True)
-            
+
         for square in combat_squares:
             if (square.strength > square.production * (self.buildup + 1)) and square.move == -1 and square.moving_here == [] and ((square.x + square.y) % 2 == self.frame % 2):
                 # self.move_towards_map(square, self.distance_from_combat_zone)
@@ -499,8 +500,7 @@ class Game:
                 self.move_towards_map_old(square, combat_distance_matrix)
             else:
                 self.make_move(square, STILL, -1)
-            
-            
+
     def get_moves_breakthrough(self):
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
         # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
@@ -513,9 +513,6 @@ class Game:
             if self.own_strength_map[4, square.x, square.y] > 750 and (self.own_strength_map[4, square.x, square.y] > 1.5 * self.enemy_strength_map[4, square.x, square.y]):
                 self.attack_cell(square, 1)
 
-                
-                
-                
     def move_inner_squares(self):
         idle_squares_indices = np.transpose(np.nonzero((self.move_map == -1) * self.is_owned_map))
         idle_squares = [self.squares[c[0], c[1]] for c in idle_squares_indices]
@@ -523,8 +520,8 @@ class Game:
         if len(idle_squares) == 0:
             return
         # Move squares closer to the border first.
-        idle_squares.sort(key=lambda sq: self.distance_from_border[sq.x, sq.y])
         idle_squares.sort(key=lambda sq: sq.strength, reverse=True)
+        idle_squares.sort(key=lambda sq: self.distance_from_border[sq.x, sq.y])
 
         avg_border_val = np.sum(self.value_map * (self.border_map - self.combat_zone_map)) / np.sum(self.border_map - self.combat_zone_map)
 
@@ -548,13 +545,13 @@ class Game:
                 else:
                     d_map = self.flood_fill_to_border([s])
                     d_map[d_map == -1] = 9999
-                value_map = (self.value_map + d_map * 1.2) * self.border_map
+                value_map = (self.value_map + d_map * 1.2) * self.border_map * (self.enemy_strength_map[1] == 0)
                 # Adjust combat squares
                 # value_map[np.nonzero(self.combat_zone_map)] = 6
                 value_map[np.nonzero(self.combat_zone_map)] = avg_border_val
-                value_map += d_map ** 1.25 * self.combat_zone_map
+                value_map += d_map ** 1.5 * self.combat_zone_map
                 value_map -= self.controlled_production_influence_map[5, s.x, s.y] * 4 * self.combat_zone_map
-                
+
                 # cells that we zeroed out are set to 9999. There's a small tiny chance that a square is actually worth 0. If so, oops
                 value_map[value_map == 0] = 9999
 
@@ -574,7 +571,7 @@ class Game:
                     if self.combat_zone_map[t.x, t.y]:
                         # if (s.x + s.y) % 2 == game.frame % 2:
                         self.move_square_to_target(s, t, True)
-                        #else:
+                        # else:
                         #    continue
                     else:
                         self.move_square_to_target(s, t, True)
@@ -584,10 +581,12 @@ class Game:
                         self.attack_cell(t, 1)
 
                 # If we can capture this cell, we shouldn't have other cells move here?
-                if s.strength > t.strength:
+                if not self.combat_zone_map[t.x, t.y] and s.strength > t.strength:
                     self.value_map[t.x, t.y] += 6
+                elif self.combat_zone_map[t.x, t.y]:
+                    self.value_map[t.x, t.y] += s.strength / 300
                 else:
-                    self.value_map[t.x, t.y] += s.strength / 200   
+                    self.value_map[t.x, t.y] += s.strength / 200
 
     def distance_between(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -690,7 +689,7 @@ class Game:
             random.shuffle(possible_moves)
             possible_moves.sort(key=lambda sq: self.enemy_strength_map[4, sq.x, sq.y], reverse=True)
             self.move_square_to_target(square, possible_moves[0], True)
-                        
+
     def move_square_to_target(self, source, destination, through_friendly):
         # Get the distance matrix that we will use to determine movement.
 
@@ -761,8 +760,8 @@ class Game:
                         self.make_move(source, -1, -1)
         # Nothing to do left
         return False
-            
-            
+
+
     def move_square_to_target_simple(self, source, destination, through_friendly):
         # For large distances, we can probably get away with simple movement rules.
         dist_w = (source.x - destination.x) % self.w
@@ -923,7 +922,7 @@ class Game:
                                         return True
                         # TODO: Logic to attempt to capture a neutral cell if we want.
                         self.make_move(source, -1, -1)
-            
+
     def last_resort_strength_check(self):
         # Calculates the projected strength map and identifies squares that are violating it.
         # Ignore strength overloads due to production for now
@@ -975,7 +974,7 @@ class Game:
 
         return violation_count
 
-            
+
     def last_resort_strength_check_new(self):
         # Calculates the projected strength map and identifies squares that are violating it.
         # Ignore strength overloads due to production for now
