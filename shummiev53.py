@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v54"
+botname = "shummie v53"
 strength_buffer = 0
 print_maps = False
 
@@ -465,7 +465,7 @@ class Game:
                     n.sort(key=lambda x: x.strength)
                     self.move_square_to_target_simple(n[0], square, False)
             elif (square.x + square.y) % 2 == game.frame % 2:
-            #     Off parity square, don't force an attack (is this actually useful?)
+            #     # Off parity square, don't force an attack (is this actually useful?)
                 continue
             else:
                 self.attack_cell(square, 1)
@@ -485,6 +485,7 @@ class Game:
                 self.move_towards_map_old(square, combat_distance_matrix)
             else:
                 self.make_move(square, STILL, -1)
+
 
     def get_moves_breakthrough(self):
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
@@ -923,7 +924,7 @@ class Game:
                         random.shuffle(n_directions)
                         n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
                         n_neighbors.sort(key=lambda x: x[1].production)
-                        n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
+                        n_neighbors.sort(key=lambda x: self.distance_from_border[x.x, x.y], reverse=True)
                         for (n_d, n) in n_neighbors:
                             # n = target.neighbors[n_d]
                             if n.owner == self.my_id:

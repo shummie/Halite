@@ -1,6 +1,19 @@
 History
 --------
-Version 50 - ?? / ???? - mu: , sigma: - January 17, 2017
+Version 54 - ?? / ???? - mu: , sigma: - January 18, 2017
+* Bugfix
+
+Version 53 - 647 / 1372 - mu: 33.44, sigma: 1.55 - January 18, 2017
+* Don't do dijkstra movement for large distances
+
+Version 52 - 250 / 1372 - mu: 40.57, sigma: 1.89 - January 18, 2017
+* Don't attack enemy borders unless breaking through
+* Try to enforce parity movement a bit more
+
+Version 51 - 10 / 1371 - mu: 49.78, sigma: 0.69 - January 18, 2017
+* Significantly bump up cost to go to a combat square so that cells try to continue to capture less valuable squares when at borders.
+
+Version 50 - 10 / 1370 - mu: 50.32, sigma: 0.7 - January 17, 2017
 * Stole some add'l code from the v46 prior bots.
 * Combat radius code added to force more cells to attack
 * Reverted back to old strength collision code.

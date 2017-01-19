@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v54"
+botname = "shummie v51-3-1"
 strength_buffer = 0
 print_maps = False
 
@@ -46,6 +46,7 @@ class Game:
         self.create_squares_list()
 
         self.frame = -1
+        self.phase = 0
 
         self.get_frame()
 
@@ -129,12 +130,19 @@ class Game:
     def set_configs(self):
         self.buildup = 5
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
+        # self.pre_combat_threshold = -3
         self.combat_radius = 8
         # self.production_cells_out = 15
-        self.phase = 0
+        # self.phase = 0
+        # Find the "global max"
+        # self.global_max_square = None
+        # self.total_avg_cost_to_global = 0
 
     def update_configs(self):
         self.buildup = 5
+
+        # if np.sum(self.combat_zone_map) > 3:
+        #     self.production_cells_out = int(self.w / self.starting_player_count / 2.5)
 
         if self.phase == 0:
             if np.sum(self.is_owned_map) > 5:
@@ -142,6 +150,7 @@ class Game:
 
         if self.percent_owned > 0.6:
             self.buildup -= 1
+            # self.pre_combat_threshold = 0
             # self.combat_radius = 10
 
         elif self.my_production_sum / self.next_highest_production_sum > 1.1:
@@ -263,6 +272,9 @@ class Game:
         # end = time.time()
         # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
         # start = time.time()
+        # end = time.time()
+        # logging.debug("update_recover Frame: " + str(game.frame) + " : " + str(end - start))
+        # start = time.time()
         self.update_value_maps()
         # end = time.time()
         # logging.debug("update_value_maps Frame: " + str(game.frame) + " : " + str(end - start))
@@ -338,6 +350,8 @@ class Game:
         # Each neutral cell gets assigned to the closest border non-combat cell
         global_targets_indices = np.transpose(np.nonzero(self.is_neutral_map - self.combat_zone_map))
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
+        # border_squares_indices = np.transpose(np.nonzero(self.border_map - self.combat_zone_map))
+        # border_squares = [self.squares[c[0], c[1]] for c in border_squares_indices]
         self.global_border_map = np.zeros((self.w, self.h))
 
         for g in global_targets:
@@ -348,13 +362,12 @@ class Game:
             self.global_border_map[tx, ty] += self.base_value_map[g.x, g.y] / self.dij_recov_distance_map[g.x, g.y, tx, ty]
 
         self.value_map = 1 / np.maximum(self.base_value_map + self.global_border_map * 1, 0.001)
-        self.value_map = self.value_map + (999 * (self.enemy_strength_map[1] > 0) * self.border_map)
         print_map(self.global_border_map, "global_border_")
         print_map(self.base_value_map, "base_value_")
         print_map(self.value_map, "value_map_")
 
     def update_controlled_influence_production_maps(self):
-        max_distance = 6
+        max_distance = 9
         self.controlled_production_influence_map = np.zeros((max_distance + 1, self.w, self.h))
         self.controlled_production_influence_map[0] = self.production_map * (self.is_enemy_map + self.is_owned_map)
         for distance in range(1, max_distance + 1):
@@ -465,7 +478,7 @@ class Game:
                     n.sort(key=lambda x: x.strength)
                     self.move_square_to_target_simple(n[0], square, False)
             elif (square.x + square.y) % 2 == game.frame % 2:
-            #     Off parity square, don't force an attack (is this actually useful?)
+            #     # Off parity square, don't force an attack (is this actually useful?)
                 continue
             else:
                 self.attack_cell(square, 1)
@@ -486,6 +499,7 @@ class Game:
             else:
                 self.make_move(square, STILL, -1)
 
+
     def get_moves_breakthrough(self):
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
         # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
@@ -495,7 +509,7 @@ class Game:
         # We only want to bust through if we have a lot of strength here.
         # logging.debug(str(self.own_strength_map[4]))
         for square in potential_squares:
-            if self.own_strength_map[4, square.x, square.y] > 1500 and (self.own_strength_map[4, square.x, square.y] > 1.5 * self.enemy_strength_map[4, square.x, square.y]):
+            if self.own_strength_map[4, square.x, square.y] > 750 and (self.own_strength_map[4, square.x, square.y] > 1.5 * self.enemy_strength_map[4, square.x, square.y]):
                 self.attack_cell(square, 1)
 
     def move_inner_squares(self):
@@ -522,7 +536,7 @@ class Game:
                         self.value_map[targets[0].x, targets[0].y] += 2
                         continue
 
-            if s.strength > (s.production * self.buildup) and s.moving_here == [] and (((s.x + s.y) % 2) == (game.frame % 2)):
+            if s.strength > (s.production * self.buildup) and s.moving_here == []:
                 # we want to move towards the border square with the LOWEST value.
                 # Gets base values for border squares
                 if np.sum(self.is_owned_map) > 120:
@@ -545,22 +559,22 @@ class Game:
                 t = self.squares[tx, ty]
 
                 # If we're closer to the border, enforce parity movement
-                if self.distance_between(s, t) < 6 and self.distance_from_combat_zone[s.x, s.y] < 7:
+                if self.distance_between(s, t) < 4 and self.distance_from_combat_zone[s.x, s.y] < 5:
                     if (s.x + s.y) % 2 != game.frame % 2:
                         continue
 
                 if self.distance_between(s, t) > 14:
                     self.move_square_to_target_simple(s, t, True)
                 elif self.distance_between(s, t) > 4:
-                    self.move_square_to_target_dijkstra(s, t, True)
+                    self.move_square_to_target(s, t, True)
                 elif self.distance_between(s, t) > 1:
                     if self.combat_zone_map[t.x, t.y]:
                         # if (s.x + s.y) % 2 == game.frame % 2:
-                        self.move_square_to_target_dijkstra(s, t, True)
+                        self.move_square_to_target(s, t, True)
                         #else:
                         #    continue
                     else:
-                        self.move_square_to_target_dijkstra(s, t, True)
+                        self.move_square_to_target(s, t, True)
                 else:
                     if s.strength > t.strength:
                         # self.move_square_to_target(s, t, False)
@@ -727,7 +741,6 @@ class Game:
                         random.shuffle(n_directions)
                         n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
                         n_neighbors.sort(key=lambda x: x[1].production)
-                        n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
                         for (n_d, n) in n_neighbors:
                             # n = target.neighbors[n_d]
                             if n.owner == self.my_id:
@@ -746,37 +759,6 @@ class Game:
         # Nothing to do left
         return False
 
-    def move_square_to_target_dijkstra(self, source, destination, through_friendly=True, simple=False):
-        # Will check dijkstra movement
-        if not self.do_prod_dij:
-            return self.move_square_to_target(source, destination, through_friendly)
-
-        path = []
-        current = source.vertex
-        # logging.debug("frame: " + str(self.frame) + " bx/by: " + str(tx) + "/" + str(ty))
-        # logging.debug(str(list(temp_map)))
-        if source == destination:
-            return False
-
-        while current != destination.vertex:
-            path.append(self.squares[current // self.h, current % self.h])
-            current = self.dij_recov_route[destination.vertex, current]
-
-        path.append(self.squares[current // self.h, current % self.h])
-        friendly_path = True
-        for square in path:
-            if square.owner != self.my_id and square != destination:
-                friendly_path = False
-                break
-
-        if not friendly_path:
-            if simple:
-                return self.move_square_to_target_simple(source, destination, through_friendly)
-            else:
-                return self.move_square_to_target(source, destination, through_friendly)
-        else:
-            target = path[1]
-            return self.move_square_to_target_simple(source, target, True)
 
     def move_square_to_target_simple(self, source, destination, through_friendly):
         # For large distances, we can probably get away with simple movement rules.
@@ -923,7 +905,6 @@ class Game:
                         random.shuffle(n_directions)
                         n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
                         n_neighbors.sort(key=lambda x: x[1].production)
-                        n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
                         for (n_d, n) in n_neighbors:
                             # n = target.neighbors[n_d]
                             if n.owner == self.my_id:
@@ -973,8 +954,7 @@ class Game:
                         if square.strength > 2 * n.strength and n.production > 1:
                             possible_paths.append((d, n, n.strength))
 
-                # possible_paths.sort(key=lambda x: x[2])
-                possible_paths.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y])
+                possible_paths.sort(key=lambda x: x[2])
                 # Force a move there
                 self.make_move(square, d, -1)
             else:
@@ -991,6 +971,7 @@ class Game:
                 # self.make_move(options_list[0][0], STILL, None)
 
         return violation_count
+
 
     def last_resort_strength_check_new(self):
         # Calculates the projected strength map and identifies squares that are violating it.
