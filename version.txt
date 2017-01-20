@@ -6,7 +6,7 @@ Version 57 - ?? / ???? - mu: , sigma: - January 19, 2017
 * Lower production penalty for going out further.
 * Tweak combat code. Should be more effective at reducing overkill damage to self.
 
-Version 56 - 6 / 1377 - mu: 50.95, sigma: 0.77 - January 19, 2017
+Version 56 - 6 / 1382 - mu: 50.95, sigma: 0.77 - January 19, 2017
 * Search a couple squares out when attacking a cell (a bit wacky I think but seems to work) (V 56-1-1, not used)
 * Put some logic from newbot into old bot. Hybrid bot!
 
