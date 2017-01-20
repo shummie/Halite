@@ -15,9 +15,9 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v57"
+botname = "shummie v57-1-4"
 strength_buffer = 0
-print_maps = False
+print_maps = True
 
 
 def print_map(npmap, name):

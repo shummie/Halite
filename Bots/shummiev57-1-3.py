@@ -15,9 +15,9 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v57"
+botname = "shummie v57-1-3"
 strength_buffer = 0
-print_maps = False
+print_maps = True
 
 
 def print_map(npmap, name):
@@ -192,7 +192,7 @@ class Game:
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         self.pre_combat_threshold = -3
         self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)
+        self.production_cells_out = 5
         self.phase = 0
         # Find the "global max"
         self.global_max_square = None
@@ -204,9 +204,6 @@ class Game:
         self.buildup_multiplier = self.buildup_multiplier - (self.distance_from_border ** 0.4)
         # self.combat_radius = int(min(max(5, self.percent_owned * self.width / 2), self.width // 2))
         self.combat_radius = 8
-
-        if np.sum(self.combat_zone_map) > 3:
-            self.production_cells_out = int(self.width / self.starting_player_count / 2.5)
 
         if self.percent_owned > 0.6:
             self.buildup_multiplier -= 1
@@ -237,6 +234,12 @@ class Game:
         # end = time.time()
         # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
         # start = time.time()
+
+
+        # end = time.time()
+        # logging.debug("update_recover Frame: " + str(game.frame) + " : " + str(end - start))
+
+
         self.update_value_production_map()
         self.update_controlled_influence_production_maps()
 
@@ -331,7 +334,7 @@ class Game:
         self.value_production_map[self.value_production_map > (avg_recov_threshold * avg_map_recovery)] = 9999
 
     def update_controlled_influence_production_maps(self):
-        max_distance = 6
+        max_distance = 9
         self.controlled_production_influence_map = np.zeros((max_distance + 1, self.width, self.height))
         self.controlled_production_influence_map[0] = self.production_map * (self.is_enemy_map + self.is_owned_map)
         for distance in range(1, max_distance + 1):
@@ -344,6 +347,7 @@ class Game:
         self.get_pre_combat_production()
         # 1 - Find combat zone cells and attack them.
 #        start = time.time()
+
         self.get_moves_attack()
 #        end = time.time()
 #        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
@@ -507,7 +511,7 @@ class Game:
         if len(potential_targets) == 0:
             return
         potential_targets.sort(key=lambda x: x[0].strength)
-        potential_targets.sort(key=lambda x: x[1] + (x[2] * 1))
+        potential_targets.sort(key=lambda x: x[1] + (x[2] * 1.5))
 
         # Keep only the top 80ile?
         # potential_targets = potential_targets[0:int(len(potential_targets) * .9)]

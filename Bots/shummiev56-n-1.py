@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v57"
+botname = "shummie v56-n-1"
 strength_buffer = 0
 print_maps = False
 
@@ -237,6 +237,12 @@ class Game:
         # end = time.time()
         # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
         # start = time.time()
+
+
+        # end = time.time()
+        # logging.debug("update_recover Frame: " + str(game.frame) + " : " + str(end - start))
+
+
         self.update_value_production_map()
         self.update_controlled_influence_production_maps()
 
@@ -291,7 +297,6 @@ class Game:
 
         for x in range(len(self.enemy_strength_map)):
             self.enemy_strength_map[x] = spread_n(self.enemy_strength_map[0], x)
-            print_map(self.enemy_strength_map[x], "enemy_str_" + str(x) + "_")
 
         self.own_strength_map = np.zeros((5, self.width, self.height))
         self.own_strength_map[0] = self.strength_map * self.is_owned_map
@@ -306,7 +311,7 @@ class Game:
         global_targets_indices = np.transpose(np.nonzero(self.is_neutral_map - self.combat_zone_map))
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
         self.global_border_map = np.zeros((self.width, self.height))
-
+        
         for g in global_targets:
             # Find the closest border square that routes to g
             gb_map = self.dij_recov_distance_map[g.x, g.y] * (self.border_map - self.combat_zone_map)
@@ -315,7 +320,7 @@ class Game:
             self.global_border_map[tx, ty] += self.base_value_map[g.x, g.y] / self.dij_recov_distance_map[g.x, g.y, tx, ty]
 
         self.value_production_map = 1 / np.maximum(self.base_value_map + self.global_border_map * 1, 0.001)
-
+        
         self.value_production_map *= (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)
         # self.value_production_map = (self.border_map - self.combat_zone_map) * self.recover_wtd_map
         self.value_production_map[self.value_production_map == 0] = 9999
@@ -326,12 +331,11 @@ class Game:
         # best_cell_value = self.value_production_map[bx, by]
 
         avg_recov_threshold = 2
-        # avg_map_recovery = np.sum(self.strength_map * (self.border_map - self.combat_zone_map)) / np.sum(self.production_map * (self.border_map - self.combat_zone_map))
         avg_map_recovery = np.sum(self.strength_map * self.border_map) / np.sum(self.production_map * self.border_map)
         self.value_production_map[self.value_production_map > (avg_recov_threshold * avg_map_recovery)] = 9999
 
     def update_controlled_influence_production_maps(self):
-        max_distance = 6
+        max_distance = 9
         self.controlled_production_influence_map = np.zeros((max_distance + 1, self.width, self.height))
         self.controlled_production_influence_map[0] = self.production_map * (self.is_enemy_map + self.is_owned_map)
         for distance in range(1, max_distance + 1):
@@ -344,6 +348,7 @@ class Game:
         self.get_pre_combat_production()
         # 1 - Find combat zone cells and attack them.
 #        start = time.time()
+
         self.get_moves_attack()
 #        end = time.time()
 #        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
@@ -391,32 +396,22 @@ class Game:
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
         combat_distance_matrix = self.friendly_flood_fill_multiple_sources(combat_zone_squares, self.combat_radius)
         # np.savetxt("Masps\maps%i.txt" % self.frame, combat_distance_matrix)
-        # combat_distance_matrix[combat_distance_matrix == -1] = 0
-        # combat_distance_matrix[combat_distance_matrix == 1] = 0
+        combat_distance_matrix[combat_distance_matrix == -1] = 0
+        combat_distance_matrix[combat_distance_matrix == 1] = 0
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
         combat_squares.sort(key=lambda x: x.strength, reverse=True)
         # combat_squares_indices = np.transpose(np.nonzero((self.distance_from_combat_zone <= combat_radius) * (self.move_map == -1)))
         # combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
-        print_map(combat_distance_matrix, "combat_distance_matrix_")
 
         for square in combat_squares:
-            if (square.strength > 0) and (combat_distance_matrix[square.x, square.y] == 1) and (square.move == -1 or square.move == STILL):
-                targets = []
-                for n in square.neighbors:
-                    if n.owner == 0 and n.strength == 0:
-                        targets.append(n)
-                targets.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
-                if len(targets) > 0:
-                    self.move_square_to_target_simple(square, targets[0], False)
-            elif (square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + self.distance_from_combat_zone[square.x, square.y]))) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+            if (square.strength > square.production * (self.buildup_multiplier[square.x, square.y] + 1)) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                 # self.move_towards_map(square, self.distance_from_combat_zone)
                 self.move_towards_map_old(square, combat_distance_matrix)
             # elif square.strength > square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
-            # elif square.strength >= square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
-
+            elif square.strength >= square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
+                self.move_towards_map_old(square, combat_distance_matrix)
             else:
-                if combat_distance_matrix[square.x, square.y] > 1:
-                    self.make_move(square, STILL, None)
+                self.make_move(square, STILL, None)
 
     def find_nearest_non_owned_border(self, square):
 
@@ -438,7 +433,7 @@ class Game:
             for n in current.neighbors:
                 if distance_map[n.x, n.y] == 0:
                     targets.append(n)
-                elif distance_map[n.x, n.y] < current_distance:
+                elif distance_map[n.x, n.y] <= current_distance - 1:
                     queue.append(n)
         random.shuffle(targets)
         target = targets.pop(0)
@@ -454,7 +449,7 @@ class Game:
         possible_moves = []
         for n in square.neighbors:
             if self.is_owned_map[n.x, n.y]:
-                if distance_map[n.x, n.y] <= current_distance - 1:
+                if distance_map[n.x, n.y] < current_distance:
                     possible_moves.append(n)
         if len(possible_moves) > 0:
             random.shuffle(possible_moves)
@@ -477,14 +472,6 @@ class Game:
             for square in combat_squares:
                 if self.distance_from_border[square.x, square.y] > 3 and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                     self.move_towards_map_old(square, combat_distance_matrix)
-                elif square.strength >= 240 and self.own_strength_map[2, square.x, square.y] >= 500 and combat_distance_matrix[square.x, square.y] == 1:
-                    # Attack
-                    targets = []
-                    for n in square.neighbors:
-                        if combat_distance_matrix[n.x, n.y] == 0:
-                            targets.append(n)
-                    targets.sort(key=lambda n: self.enemy_strength_map[1, n.x, n.y], reverse=True)
-                    self.move_square_to_target_simple(square, targets[0], False)
                 elif square.move == -1:
                     self.make_move(square, STILL, None)
 
@@ -507,7 +494,7 @@ class Game:
         if len(potential_targets) == 0:
             return
         potential_targets.sort(key=lambda x: x[0].strength)
-        potential_targets.sort(key=lambda x: x[1] + (x[2] * 1))
+        potential_targets.sort(key=lambda x: x[1] + (x[2] * 1.5))
 
         # Keep only the top 80ile?
         # potential_targets = potential_targets[0:int(len(potential_targets) * .9)]
@@ -568,10 +555,6 @@ class Game:
                     tx, ty = np.unravel_index(value_map.argmin(), (self.width, self.height))
                     target = self.squares[tx, ty]
                     # We're targeting either a combat square, or a production square. Don't move towards close production squares.
-                    if self.distance_between(square, target) < 6 and self.distance_from_combat_zone[square.x, square.y] < 7:
-                        if (square.x + square.y) % 2 != game.frame % 2:
-                            continue
-
                     if self.combat_zone_map[tx, ty]:
                         if self.distance_between(square, target) > 14:
                             self.move_square_to_target_simple(square, target, True)
@@ -719,9 +702,13 @@ class Game:
                         # Start with trying to move to the same destination as someone moving here.
                         self.make_move(source, direction, destination)  # Queue the move up, undo if it doesn't work
                         n_directions = list(range(4))
-                        n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
-                        n_neighbors.sort(key=lambda x: x[1].production)
-                        n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
+                        random.shuffle(n_directions)
+                        for n in target.moving_here:
+                            # n = target.neighbors[n_d]
+                            if n.owner == self.my_id and n.far_target is not None:  # The n.owner check is redundant, but just in case.
+                                success = self.move_square_to_target(target, n.far_target, True)
+                                if success:
+                                    return True
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
@@ -888,9 +875,13 @@ class Game:
                         # Start with trying to move to the same destination as someone moving here.
                         self.make_move(source, direction, destination)  # Queue the move up, undo if it doesn't work
                         n_directions = list(range(4))
-                        n_neighbors = [(nd, target.neighbors[nd]) for nd in n_directions]
-                        n_neighbors.sort(key=lambda x: x[1].production)
-                        n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
+                        random.shuffle(n_directions)
+                        for n in target.moving_here:
+                            # n = target.neighbors[n_d]
+                            if n.owner == self.my_id and n.far_target is not None:  # The n.owner check is redundant, but just in case.
+                                success = self.move_square_to_target(target, n.far_target, True)
+                                if success:
+                                    return True
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
@@ -1037,7 +1028,6 @@ class Game:
                             possible_paths.append((d, n, n.strength))
 
                 possible_paths.sort(key=lambda x: x[2])
-                possible_paths.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
                 # Force a move there
                 self.make_move(square, d, n)
             else:

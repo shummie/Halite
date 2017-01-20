@@ -1,6 +1,19 @@
 History
 --------
-Version 54 - ?? / ???? - mu: , sigma: - January 18, 2017
+Version 58 - ?? / ???? - mu: , sigma: - January ?, 2017
+
+Version 57 - ?? / ???? - mu: , sigma: - January 19, 2017
+* Lower production penalty for going out further.
+* Tweak combat code. Should be more effective at reducing overkill damage to self.
+
+Version 56 - 6 / 1377 - mu: 50.95, sigma: 0.77 - January 19, 2017
+* Search a couple squares out when attacking a cell (a bit wacky I think but seems to work) (V 56-1-1, not used)
+* Put some logic from newbot into old bot. Hybrid bot!
+
+Version 55 - 9 / 1376 - mu: 49.87, sigma: 0.73 - January 19, 2017
+* Temporary test to see how v44 bot does nowadays.
+
+Version 54 - 8 / 1373 - mu: 50.31, sigma: 0.68 - January 18, 2017
 * Bugfix
 
 Version 53 - 647 / 1372 - mu: 33.44, sigma: 1.55 - January 18, 2017
