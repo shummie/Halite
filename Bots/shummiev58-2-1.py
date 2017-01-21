@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v58"
+botname = "shummie v58-2-1"
 strength_buffer = 0
 print_maps = False
 
@@ -192,11 +192,9 @@ class Game:
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         self.pre_combat_threshold = -3
         self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)
+        self.production_cells_out = 5
         self.phase = 0
-        # Find the "global max"
-        self.global_max_square = None
-        self.total_avg_cost_to_global = 0
+
 
     def update_configs(self):
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 5), 5)
@@ -204,9 +202,6 @@ class Game:
         self.buildup_multiplier = self.buildup_multiplier - (self.distance_from_border ** 0.4)
         # self.combat_radius = int(min(max(5, self.percent_owned * self.width / 2), self.width // 2))
         self.combat_radius = 8
-
-        if np.sum(self.combat_zone_map) > 3:
-            self.production_cells_out = int(self.width / self.starting_player_count / 2.5)
 
         if self.percent_owned > 0.6:
             self.buildup_multiplier -= 1
@@ -402,24 +397,12 @@ class Game:
         for square in combat_squares:
             if (square.strength > 0) and (combat_distance_matrix[square.x, square.y] == 1) and (square.move == -1 or square.move == STILL):
                 targets = []
-                alt_targets = []
                 for n in square.neighbors:
                     if n.owner == 0 and n.strength == 0:
                         targets.append(n)
-                    elif n.owner == self.my_id:
-                        alt_targets.append(n)
                 targets.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
-                alt_targets.sort(key=lambda x: x.strength)
-                success = False
-                for t in targets:
-                    success = self.move_square_to_target_simple(square, t, False)
-                    if success:
-                        break
-                if not success:
-                    for t in targets:
-                        success = self.move_square_to_target_simple(square, t, True)
-                        if success:
-                            break
+                if len(targets) > 0:
+                    self.move_square_to_target_simple(square, targets[0], False)
             elif (square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + self.distance_from_combat_zone[square.x, square.y]))) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                 # self.move_towards_map(square, self.distance_from_combat_zone)
                 self.move_towards_map_old(square, combat_distance_matrix)
@@ -522,11 +505,11 @@ class Game:
         potential_targets.sort(key=lambda x: x[1] + (x[2] * 1))
 
         # Keep only the top 80ile?
-        # potential_targets = potential_targets[0:int(len(potential_targets) * .9)]
-        remove_targets = potential_targets[int(len(potential_targets) * 0.85):]
-        for t in remove_targets:
-            potential_targets.remove(t)
-            self.value_production_map[t[0].x, t[0].y] = 9999
+        potential_targets = potential_targets[0:int(len(potential_targets) * .9)]
+        # remove_targets = potential_targets[int(len(potential_targets) * 0.25):]
+        # for t in remove_targets:
+        #     potential_targets.remove(t)
+        #     self.value_production_map[t[0].x, t[0].y] = 9999
 
         # best_target_value = potential_targets[0][1]
         # anything with X of the best_value target should be considered. Let's set this to 4 right now.
@@ -584,9 +567,7 @@ class Game:
                         if (square.x + square.y) % 2 != game.frame % 2:
                             continue
 
-                    if (self.enemy_strength_map[3, square.x, square.y] > 0) and (((square.x + square.y) % 2) != (game.frame % 2)):
-                        self.make_move(square, STILL, None)
-                    elif self.combat_zone_map[tx, ty]:
+                    if self.combat_zone_map[tx, ty]:
                         if self.distance_between(square, target) > 14:
                             self.move_square_to_target_simple(square, target, True)
                         elif self.distance_between(square, target) > 1:
@@ -594,8 +575,12 @@ class Game:
                     else:
                         if self.distance_between(square, target) > 14:
                             self.move_square_to_target_simple(square, target, True)
-                        elif self.distance_between(square, target) > self.production_cells_out - 1:
+                        # elif self.distance_between(square, target) > self.production_cells_out - 1:
+                        #     self.move_square_to_target(square, target, True)
+                        elif self.distance_between(square, target) > max(1, self.production_cells_out - 1):
                             self.move_square_to_target(square, target, True)
+                        else:
+                            self.attack_cell(target, 1)
 
     def distance_between(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -739,7 +724,7 @@ class Game:
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
-                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
+                            if n.owner == self.my_id:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -908,7 +893,7 @@ class Game:
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
-                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
+                            if n.owner == self.my_id:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -1043,11 +1028,11 @@ class Game:
                 for d in range(0, 4):
                     # Move to the lowest strength neighbor. this might cause a collision but we'll resolve it with multiple iterations
                     n = square.neighbors[d]
-                    if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
+                    if n.owner == self.my_id:
                         possible_paths.append((d, n, projected_strength_map[n.x, n.y]))
                     else:
                         # Try attacking a bordering cell
-                        if (square.strength > (2 * n.strength)) and (n.production > 1):
+                        if square.strength > 2 * n.strength and n.production > 1:
                             possible_paths.append((d, n, n.strength))
 
                 possible_paths.sort(key=lambda x: x[2])

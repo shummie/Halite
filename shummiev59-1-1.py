@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v58"
+botname = "shummie v59-1-1"
 strength_buffer = 0
 print_maps = False
 
@@ -739,7 +739,7 @@ class Game:
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
-                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
+                            if n.owner == self.my_id and self.enemy_strength_map[3, n.x, n.y] == 0:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -908,7 +908,7 @@ class Game:
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
-                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
+                            if n.owner == self.my_id and self.enemy_strength_map[3, n.x, n.y] == 0:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -1043,7 +1043,7 @@ class Game:
                 for d in range(0, 4):
                     # Move to the lowest strength neighbor. this might cause a collision but we'll resolve it with multiple iterations
                     n = square.neighbors[d]
-                    if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
+                    if n.owner == self.my_id and self.enemy_strength_map[3, n.x, n.y] == 0:
                         possible_paths.append((d, n, projected_strength_map[n.x, n.y]))
                     else:
                         # Try attacking a bordering cell

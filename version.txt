@@ -1,8 +1,11 @@
 History
 --------
-Version 58 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 59 - ?? / ???? - mu: , sigma: - January ?, 2017
 
-Version 57 - ?? / ???? - mu: , sigma: - January 19, 2017
+Version 58 - ?? / ???? - mu: , sigma: - January 20, 2017
+* Additional tweaks to combat to reduce overkill damage to self.
+
+Version 57 - 4 / 1386 - mu: 51.15, sigma: 0.7 - January 19, 2017
 * Lower production penalty for going out further.
 * Tweak combat code. Should be more effective at reducing overkill damage to self.
 
