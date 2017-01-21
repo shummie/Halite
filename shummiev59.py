@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v59-1-1"
+botname = "shummie v59"
 strength_buffer = 0
 print_maps = False
 
@@ -487,9 +487,9 @@ class Game:
             combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
 
             for square in combat_squares:
-                if self.distance_from_border[square.x, square.y] > 3 and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+                if (self.distance_from_border[square.x, square.y] > 3) and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                     self.move_towards_map_old(square, combat_distance_matrix)
-                elif square.strength >= 240 and self.own_strength_map[2, square.x, square.y] >= 500 and combat_distance_matrix[square.x, square.y] == 1:
+                elif (square.strength >= 240) and (self.own_strength_map[2, square.x, square.y] >= 750) and (combat_distance_matrix[square.x, square.y] == 1):
                     # Attack
                     targets = []
                     for n in square.neighbors:
@@ -615,10 +615,10 @@ class Game:
             if cells_out > 1 and self.combat_zone_map[target.x, target.y]:
                 return False
 
-            if target.strength == 0 or target.production >= 5 or self.phase == 0:
+            if target.strength == 0 or target.production >= 5:  # or self.phase == 0:
                 free_squares = self.is_owned_map * (self.move_map == -1)
             else:
-                free_squares = self.is_owned_map * (self.move_map == -1) * (self.strength_map >= 5 * self.production_map)
+                free_squares = self.is_owned_map * (self.move_map == -1) * (self.strength_map >= self.buildup_multiplier * self.production_map)
             target_distance_matrix = self.friendly_flood_fill(target, cells_out)
             target_distance_matrix[target_distance_matrix == -1] = 0
             target_distance_matrix = target_distance_matrix * free_squares
@@ -739,7 +739,7 @@ class Game:
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
-                            if n.owner == self.my_id and self.enemy_strength_map[3, n.x, n.y] == 0:
+                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -908,7 +908,7 @@ class Game:
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for n_d in n_directions:
                             n = target.neighbors[n_d]
-                            if n.owner == self.my_id and self.enemy_strength_map[3, n.x, n.y] == 0:
+                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -1043,7 +1043,7 @@ class Game:
                 for d in range(0, 4):
                     # Move to the lowest strength neighbor. this might cause a collision but we'll resolve it with multiple iterations
                     n = square.neighbors[d]
-                    if n.owner == self.my_id and self.enemy_strength_map[3, n.x, n.y] == 0:
+                    if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
                         possible_paths.append((d, n, projected_strength_map[n.x, n.y]))
                     else:
                         # Try attacking a bordering cell

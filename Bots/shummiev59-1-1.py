@@ -15,7 +15,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v59"
+botname = "shummie v59-1-1"
 strength_buffer = 0
 print_maps = False
 
@@ -487,9 +487,9 @@ class Game:
             combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
 
             for square in combat_squares:
-                if (self.distance_from_border[square.x, square.y] > 3) and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+                if self.distance_from_border[square.x, square.y] > 3 and (square.strength > square.production * self.buildup_multiplier[square.x, square.y] + 5) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
                     self.move_towards_map_old(square, combat_distance_matrix)
-                elif (square.strength >= 240) and (self.own_strength_map[2, square.x, square.y] >= 750) and (combat_distance_matrix[square.x, square.y] == 1):
+                elif square.strength >= 240 and self.own_strength_map[2, square.x, square.y] >= 500 and combat_distance_matrix[square.x, square.y] == 1:
                     # Attack
                     targets = []
                     for n in square.neighbors:
@@ -615,10 +615,10 @@ class Game:
             if cells_out > 1 and self.combat_zone_map[target.x, target.y]:
                 return False
 
-            if target.strength == 0 or target.production >= 5:  # or self.phase == 0:
+            if target.strength == 0 or target.production >= 5 or self.phase == 0:
                 free_squares = self.is_owned_map * (self.move_map == -1)
             else:
-                free_squares = self.is_owned_map * (self.move_map == -1) * (self.strength_map >= self.buildup_multiplier * self.production_map)
+                free_squares = self.is_owned_map * (self.move_map == -1) * (self.strength_map >= 5 * self.production_map)
             target_distance_matrix = self.friendly_flood_fill(target, cells_out)
             target_distance_matrix[target_distance_matrix == -1] = 0
             target_distance_matrix = target_distance_matrix * free_squares
@@ -1069,6 +1069,67 @@ class Game:
 
         return violation_count
 
+    def checkerboard(self):
+        # Tries to force checkerboard pattern to reduce overkill damage.
+        projected_strength_map = np.zeros((self.width, self.height))
+        # We only care about our moves.
+        for square in itertools.chain.from_iterable(self.squares):
+            if square.owner == self.my_id:
+                if square.move == -1 or square.move == STILL:
+                    projected_strength_map[square.x, square.y] += square.strength  # + square.production
+                else:
+                    dx, dy = get_offset(square.move)
+                    projected_strength_map[(square.x + dx) % self.width, (square.y + dy) % self.height] += square.strength
+
+        # Simple loop for now
+        for x in range(self.width):
+            for y in range(self.height):
+                if ((x + y) % 2) == (self.frame % 2):
+                    # These squares should be EMPTY if possible.
+                    if self.enemy_strength_map[2, x, y] > 0:
+                        # These squares are the ones that could potentially be affected
+                        if projected_strength_map[x, y] > 0:
+                            # Can we move stuff out of the way here?
+                            # Are there squares moving into this square??
+                            for s in self.squares[x, y].moving_here:
+                                # Tell them to stay still
+                                # The only way they won't now is if they get rerouted by last_strength check but they shouldn't move into a square w/ enemystrength[2] > 0
+                                self.make_move(s, STILL, None)
+                                for sn in s.neighbors:
+                                    if sn.owner == self.my_id:
+                                        self.make_move(sn, STILL, None)
+                                        for snn in sn.neighbors:
+                                            if sn.owner == self.my_id:
+                                                self.make_move(snn, STILL, None)
+                            if self.squares[x, y].move == -1 or self.squares[x, y].move == 4:
+                                # Get out of the way!
+                                # Find a neighboring square to move into
+                                targets = []
+                                for n in self.squares[x, y].neighbors:
+                                    if n.owner == 0 and n.strength == 0 and ((projected_strength_map[x, y] + self.squares[x, y].strength) <= (255 + strength_buffer)):
+                                        targets.append(n)
+                                    elif n.owner == self.my_id:
+                                        if (projected_strength_map[x, y] + self.squares[x, y].strength) <= (255 + strength_buffer):
+                                            targets.append(n)
+                                if len(targets) == 0:
+                                    # Try to find a friendly target to force move out
+                                    for n in self.squares[x, y].neighbors:
+                                        success = False
+                                        if n.owner == self.my_id:
+                                            for n_n in n.neighbors:
+                                                # Try to move this to a neigboring square. This will violate parity.
+                                                if self.enemy_strength_map[2, n_n.x, n_n.y] == 0:
+                                                    if (projected_strength_map[n_n.x, n_n.y] + n.strength) <= (255 + strength_buffer):
+                                                        success = self.move_square_to_target_simple(n, n_n, True)
+                                                        if success:
+                                                            self.move_square_to_target_simple(self.squares[x, y], n, True)
+                                                            break
+                                else:
+                                    # Which square to move into? Try to go away from enemy.
+                                    targets.sort(key=lambda s: projected_strength_map[s.x, s.y])
+                                    targets.sort(key=lambda s: self.enemy_strength_map[2, s.x, s.y])
+                                    self.move_square_to_target(self.squares[x, y], targets[0], False)
+
     def update_stats(self):
         # Updates various stats used for tracking
         self.turns_left = self.max_turns - self.frame
@@ -1266,11 +1327,16 @@ def game_loop():
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
 
+
+    # game.checkerboard()
+
+
     collision_check = 998
     last_collision_check = 999
     while collision_check < last_collision_check:
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
+
 
     game.send_frame()
 

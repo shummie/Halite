@@ -1,8 +1,9 @@
 History
 --------
 Version 59 - ?? / ???? - mu: , sigma: - January ?, 2017
+* Fix a bug in attack cell that made it search for all cells.
 
-Version 58 - ?? / ???? - mu: , sigma: - January 20, 2017
+Version 58 - 6 / 1395 - mu: 50.68, sigma: 0.68 - January 20, 2017
 * Additional tweaks to combat to reduce overkill damage to self.
 
 Version 57 - 4 / 1386 - mu: 51.15, sigma: 0.7 - January 19, 2017
