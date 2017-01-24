@@ -32,6 +32,7 @@ type Square struct {
     MovingHere map[int]*Square
     Move int
     ResetStatus bool
+    DistanceFromBorder, EnemyStrengthMap2, EnemyStrengthMap4 float64
 }
 
 type Direction int
@@ -256,13 +257,14 @@ func (g *Game) updateMaps() {
     g.updateEnemyMaps()
     g.updateValueMaps()
     // g.updateControlledInfluenceProductonMaps()
+    g.updateSquareValues()
 }
 
 func (g *Game) updateEnemyMaps() {
     maxRadius := 5
-    g.EnemyStrengthMap = make([][][]float64, maxRadius)
-    g.OwnStrengthMap = make([][][]float64, maxRadius)
-    for d := 0; d < maxRadius; d ++ {
+    g.EnemyStrengthMap = make([][][]float64, maxRadius + 1)
+    g.OwnStrengthMap = make([][][]float64, maxRadius + 1)
+    for d := 0; d <= maxRadius; d++ {
         g.EnemyStrengthMap[d] = make([][]float64, g.Width)
         g.OwnStrengthMap[d] = make([][]float64, g.Width)
         for x := 0; x < g.Width; x++ {
@@ -278,7 +280,7 @@ func (g *Game) updateEnemyMaps() {
     }
 
     for d := 1; d <= maxRadius; d++ {
-        for x := 0; x < g.Width; x ++ {
+        for x := 0; x < g.Width; x++ {
             // Does a "deep copy" of the array
             copy(g.EnemyStrengthMap[d][x], g.EnemyStrengthMap[d-1][x])
             copy(g.OwnStrengthMap[d][x], g.OwnStrengthMap[d-1][x])
@@ -426,7 +428,7 @@ func (g *Game) updateDistanceMaps() {
         }
     }
     g.DistanceFromBorder = g.floodFill(borderSquares, 999, true)
-    // log.Println(g.DistanceFromBorder)
+    log.Println(g.DistanceFromBorder)
     g.DistanceFromOwned = g.floodFill(ownedSquares, 999, false)
     g.DistanceFromCombat = g.floodFill(combatSquares, 999, true)
 }
@@ -442,7 +444,7 @@ func (g *Game) updateBorderMaps() {
                 for _, n := range g.Squares[x][y].Neighbors {
                     if n.Owner == g.MyID {
                         g.BorderMap[x][y] = 1
-                        if n.Strength == 0 {
+                        if g.Squares[x][y].Strength == 0 {
                             g.CombatZoneMap[x][y] = 1
                         }
                     }
@@ -450,6 +452,18 @@ func (g *Game) updateBorderMaps() {
             }
         }
     }
+}
+
+func (g *Game) updateSquareValues() {
+    // Updates square values for sorting purposes. Add values here for more sorts
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            g.Squares[x][y].DistanceFromBorder = g.DistanceFromBorder[x][y]
+            g.Squares[x][y].EnemyStrengthMap2 = g.EnemyStrengthMap[2][x][y]
+            g.Squares[x][y].EnemyStrengthMap4 = g.EnemyStrengthMap[4][x][y]
+        }
+    }
+
 }
 
 func (g *Game) updateStats() {
@@ -468,38 +482,357 @@ func (g *Game) updateStats() {
 
 func (g *Game) getMoves() {
     // Main logic controlling code
-    g.attackBorders()
-    g.moveInnerSquares()
+    // g.attackBorders()
+    // g.moveInnerSquares()
     // g.eachSquareMoves()
 
 
     // Find super high production cells
     // g.getPreCombatProduction()
     // 1 - Find combat zone cells and attack them.
+    log.Println("move - attack")
     g.getMovesAttack()
+    log.Println("move - preparestr")
     // 2 - Build up strength
     g.getMovesPrepareStrength()
+    log.Println("move - prod")
     // 3 - Find production zone cells and attack them
     g.getMovesProduction()
+    log.Println("move - oter")
     // 4 - Move all other unassigned cells.
     g.getMovesOther()
 }
 
 func (g *Game) getMovesAttack() {
 
-    combatTargets := make([]*Square, 0, g.Width)
-    combatSquares := make([]*Square, 0, g.Width)
+    combatZoneSquares := make([]*Square, 0, g.Width)
 
     for x := 0; x < g.Width; x++ {
         for y := 0; y < g.Height; y++ {
             if g.CombatZoneMap[x][y] == 1 {
-                combatTargets = append(combatTargets, g.Squares[x][y])
+                combatZoneSquares = append(combatZoneSquares, g.Squares[x][y])
             }
-            if
         }
     }
 
+    // Attack into stronger enemy territory first.
+    if len(combatZoneSquares) == 0 {
+        return
+    }
+    sort.Sort(sort.Reverse(ByEnemyStrength2(combatZoneSquares)))
 
+    // Does this "maximize" overkill damage? Is there a better way to do it? Send in smaller squares potentially?
+    for _, sq := range combatZoneSquares {
+        g.attackCell(sq, 1)
+    }
+
+    g.getMovesBreakthrough()
+
+    // Get a list of all squares within combatRadius spaces of a combat zone
+    // TODO: This causes some bounciness, floodfill from all combat zone squares instead?
+    combatDistanceMatrix := g.floodFill(combatZoneSquares, g.CombatRadius, true)
+    combatSquares := make([]*Square, 0, g.Width)
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            if combatDistanceMatrix[x][y] > 0 {
+                combatSquares = append(combatSquares, g.Squares[x][y])
+            }
+        }
+    }
+    sort.Sort(sort.Reverse(ByStrength(combatSquares)))
+
+    for _, sq := range combatSquares {
+        if sq.Strength > 0 && combatDistanceMatrix[sq.X][sq.Y] == 1 && (sq.Move == -1 || sq.Move == 4) {
+            targets := make([]*Square, 0, 4)
+            altTargets := make([]*Square, 0, 4)
+
+            for _, n := range sq.Neighbors {
+                if n.Owner == 0 && n.Strength == 0 {
+                    targets = append(targets, n)
+                } else if n.Owner == g.MyID {
+                    altTargets = append(altTargets, n)
+                }
+            }
+            sort.Sort(sort.Reverse(ByEnemyStrength2(targets)))
+            sort.Sort(ByStrength(altTargets))
+            success := false
+            for _, t := range targets {
+                success = g.moveSquareToTargetSimple(sq, t, false)
+                if success {
+                    break
+                }
+            }
+            if !success {
+                for _, t := range altTargets {
+                    success = g.moveSquareToTargetSimple(sq, t, true)
+                    if success {
+                        break
+                    }
+                }
+            }
+        } else if sq.Strength > (sq.Production * (g.Buildup + g.DistanceFromCombat[sq.X][sq.Y])) && (((sq.X + sq.Y) % 2) == (g.Frame % 2)) && sq.Move == -1 && len(sq.MovingHere) == 0 {
+            g.moveTowardsMapOld(sq, combatDistanceMatrix)
+        } else {
+            if combatDistanceMatrix[sq.X][sq.Y] > 1 {
+                g.makeMove(sq, 4)
+            }
+        }
+    }
+}
+
+func (g *Game) getMovesBreakthrough() {
+    // Determine if we should bust through and try to open up additional lanes of attack into enemy territory
+    // Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
+    // We are only looking at squares which are next to the enemy already.
+    // TODO: This entire function needs to be relooked at / rewritten
+    potentialSquares := make([]*Square, 0, g.Width)
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            if g.BorderMap[x][y] == 1 && g.CombatZoneMap[x][y] == 0 && g.EnemyStrengthMap[1][x][y] > 0 {
+                potentialSquares = append(potentialSquares, g.Squares[x][y])
+            }
+        }
+    }
+
+    for _, sq := range potentialSquares {
+        if g.OwnStrengthMap[4][sq.X][sq.Y] > 750 && g.OwnStrengthMap[4][sq.X][sq.Y] > 1.5 * g.EnemyStrengthMap[4][sq.X][sq.Y] {
+            g.attackCell(sq, 1)
+        }
+    }
+}
+
+
+func (g *Game) moveTowardsMapOld(sq *Square, distMap [][]float64) {
+    // Note, this shouldn't be used to attack a combat zone square.
+    cDist := distMap[sq.X][sq.Y]
+    possibleMoves := make([]*Square, 0, 4)
+
+    for _, n := range sq.Neighbors {
+        if g.IsOwnedMap[n.X][n.Y] == 1 {
+            if distMap[n.X][n.Y] <= cDist - 1 {
+                possibleMoves = append(possibleMoves, n)
+            }
+        }
+    }
+
+    if len(possibleMoves) > 0 {
+        sort.Sort(sort.Reverse(ByEnemyStrength2(possibleMoves)))
+        sort.Sort(sort.Reverse(ByEnemyStrength4(possibleMoves)))
+        g.moveSquareToTarget(sq, possibleMoves[0], true)
+    }
+
+}
+
+func (g *Game) findNearestNonOwnedBorder(sq *Square) {
+    cDist := g.DistanceFromBorder[sq.X][sq.Y]
+    targets := make([]*Square, 0, 4)
+    for _, n := range sq.Neighbors {
+        if n.Owner == g.MyID && g.DistanceFromBorder[n.X][n.Y] < cDist {
+            targets = append(targets, n)
+        }
+    }
+    sort.Sort(ByProduction(targets))
+    for _, t := range targets {
+        success := g.moveSquareToTarget(sq, t, true)
+        if success {
+            break
+        }
+    }
+}
+
+func (g *Game) getMovesPrepareStrength() {
+    // Attempts to build up strength prior to an immediate engagement, only if we aren't already in combat
+    enemyBorderSquares := make([]*Square, 0, g.Width)
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            if g.BorderMap[x][y] == 1 && g.EnemyStrengthMap[1][x][y] > 0 {
+                enemyBorderSquares = append(enemyBorderSquares, g.Squares[x][y])
+            }
+        }
+    }
+    if len(enemyBorderSquares) > 0 {
+        combatDistanceMatrix := g.floodFill(enemyBorderSquares, 5, true)
+        combatSquares := make([]*Square, 0, g.Width)
+        for x := 0; x < g.Width; x++ {
+            for y := 0; y < g.Height; y++ {
+                if combatDistanceMatrix[x][y] == -1 {
+                    combatDistanceMatrix[x][y] = 0
+                }
+                if combatDistanceMatrix[x][y] > 0 {
+                    combatSquares = append(combatSquares, g.Squares[x][y])
+                }
+            }
+        }
+        for _, sq := range combatSquares {
+            if g.DistanceFromBorder[sq.X][sq.Y] > 3 && sq.Strength > (sq.Production * g.Buildup + 5) && (sq.X + sq.Y) % 2 == g.Frame % 2 && sq.Move == -1 && len(sq.MovingHere) == 0 {
+                g.moveTowardsMapOld(sq, combatDistanceMatrix)
+            } else if (sq.Strength >= 240) && g.OwnStrengthMap[2][sq.X][sq.Y] >= 750 && combatDistanceMatrix[sq.X][sq.Y] == 1 {
+                // Attack!
+                targets := make([]*Square, 0, 4)
+                for _, n := range sq.Neighbors {
+                    if combatDistanceMatrix[n.X][n.Y] == 0 {
+                        targets = append(targets, n)
+                    }
+                }
+                sort.Sort(sort.Reverse(ByEnemyStrength2(targets)))  // Old version used ByEnemyStrength1, two should produce similar results.
+                g.moveSquareToTargetSimple(sq, targets[0], false)
+            } else if (sq.Move == -1) {
+                g.makeMove(sq, 4)
+            }
+        }
+    }
+}
+
+type ProductionChoice struct {
+    sq *Square
+    value float64
+    cellsOut float64
+}
+
+type ByStrengthPC []*ProductionChoice
+
+func (s ByStrengthPC) Len() int {
+    return len(s)
+}
+
+func (s ByStrengthPC) Swap(i, j int) {
+    s[i], s[j] = s[j], s[i]
+}
+
+func (s ByStrengthPC) Less(i, j int) bool {
+    return s[i].sq.Strength < s[j].sq.Strength
+}
+
+type ByTotalCostPC []*ProductionChoice
+
+func (s ByTotalCostPC) Len() int {
+    return len(s)
+}
+
+func (s ByTotalCostPC) Swap(i, j int) {
+    s[i], s[j] = s[j], s[i]
+}
+
+func (s ByTotalCostPC) Less(i, j int) bool {
+    dPenalty := 1.0
+    return s[i].value + s[i].cellsOut * dPenalty < s[j].value + s[j].cellsOut * dPenalty
+}
+
+func (g *Game) getMovesProduction() {
+    // Tries to find the best cells to attack from a production standpoint.
+    // Does not try to attack cells that are in combat zones.
+
+    targets := make([]*ProductionChoice, 0, g.Width)
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            if g.ValueMap[x][y] < 8000 {
+                for cells := 1; cells <= g.ProductionCellsOut; cells++ {
+                    targets = append(targets, &ProductionChoice{sq: g.Squares[x][y], value: g.ValueMap[x][y], cellsOut: float64(cells)})
+                }
+            }
+        }
+    }
+    log.Println("1")
+    if len(targets) == 0 {
+        return
+    }
+    sort.Sort(ByStrengthPC(targets))
+    sort.Sort(ByTotalCostPC(targets))   // Distance penalty mod in sort function
+    // Keep only the top X %ile?
+    percentile := 0.85
+    cutIndex := int(float64(len(targets)) * percentile + 0.5)
+    removeTargets := targets[cutIndex:]
+    targets = targets[:cutIndex]
+    for _, rt := range removeTargets {
+        g.ValueMap[rt.sq.X][rt.sq.Y] = 9999 // We don't want squares to move towards these "worthless" targets later on.
+    }
+    for ; len(targets) > 0 ; {
+        log.Println(len(targets))
+        t := targets[0]
+        targets = targets[1:]
+        success := g.attackCell(t.sq, int(t.cellsOut))
+        if success && int(t.cellsOut) < g.ProductionCellsOut {
+            // Remove all other instances of this square from the list.
+            newtargets := make([]*ProductionChoice, 0, len(targets))
+            for _, a := range targets {
+                if a.sq != t.sq {
+                    newtargets = append(newtargets, a)
+                }
+            }
+            targets = newtargets
+        }
+    }
+
+}
+
+func (g *Game) getMovesOther() {
+    idleSquares := make([]*Square, 0, g.Width)
+    for x := 0; x < g.Width; x++ {
+        for y := 0; y < g.Height; y++ {
+            if g.MoveMap[x][y] == -1 && g.IsOwnedMap[x][y] == 1 {
+                idleSquares = append(idleSquares, g.Squares[x][y])
+            }
+        }
+    }
+    if len(idleSquares) == 0 {
+        return
+    }
+
+    // Move squares closer to the border first.
+    if len(idleSquares) > 1 {
+       sort.Sort(ByBorderDistance(idleSquares))
+    }
+
+    for _, s := range idleSquares {
+        if s.Strength > s.Production * g.Buildup && len(s.MovingHere) == 0 {
+            if g.PercentOwned > 0.65 {  // I wonder if this is still necessary in go.
+                g.findNearestNonOwnedBorder(s)
+            } else {
+                bestTargetValue := 10000.0
+                bx := -1
+                by := -1
+                for x := 0; x < g.Width; x++ {
+                    for y := 0; y < g.Height; y++ {
+                        tValue := 0.0
+                        if g.BorderMap[x][y] == 1 && g.CombatZoneMap[x][y] == 0 {
+                            tValue = g.ValueMap[x][y] + g.DistanceMapNoDecay[s.X][s.Y][x][y] * 1.0
+                        } else if g.CombatZoneMap[x][y] == 1 {
+                            tValue = g.DistanceMapNoDecay[s.X][s.Y][x][y] * 0.66
+                        } else {
+                            tValue = 9999.0
+                        }
+                        if tValue < bestTargetValue {
+                            bestTargetValue = tValue
+                            bx, by = x, y
+                        }
+                    }
+                }
+                b := g.Squares[bx][by]
+
+                // We're targeting either a combat square or a production square. Don't move towards close production squares
+                if g.distanceBetween(s, b) < 6 && g.DistanceFromCombat[s.X][s.Y] < 7 {
+                    if (s.X + s.Y) % 2 != g.Frame % 2 {
+                        continue
+                    }
+                }
+                if g.EnemyStrengthMap[3][s.X][s.Y] > 0 && (s.X + s.Y) % 2 != g.Frame % 2 {
+                    g.makeMove(s, 4)
+                } else if g.CombatZoneMap[bx][by] == 1 {
+                    if g.distanceBetween(s, b) > 14 {
+                        g.moveSquareToTargetSimple(s, b, true)
+                    } else if g.distanceBetween(s, b) > 1 {
+                        g.moveSquareToTarget(s, b, true)
+                    }
+                } else {
+                    if g.distanceBetween(s, b) > 14 {
+                        g.moveSquareToTargetSimple(s, b, true)
+                    } else if g.distanceBetween(s, b) > float64(g.ProductionCellsOut - 1) {
+                        g.moveSquareToTarget(s, b, true)
+                    }
+                }
+            }
+        }
+    }
 }
 
 func (g *Game) attackBorders() {
@@ -546,6 +879,7 @@ func (g *Game) attackCell(target *Square, maxDistance int) bool {
         if cellsOut > 1 && g.CombatZoneMap[target.X][target.Y] == 1 {
             return false
         }
+
         movingCells := make([]*Square, 0, 5)
         stillCells := make([]*Square, 0, 5)
         targetDistMap := g.floodFill([]*Square{target}, cellsOut, true)
@@ -960,11 +1294,13 @@ func (g *Game) lastResortStrengthCheck() int {
             }
             sort.Sort(ByStrength(optionsList))
             i := 0
-            for ; projectedStrengthMap[sq.X][sq.Y] > 255 + g.StrengthBuffer; {
-                n := optionsList[i]
-                projectedStrengthMap[sq.X][sq.Y] -= n.Strength
-                projectedStrengthMap[n.X][n.Y] += n.Strength
-                g.makeMove(n, 4)
+            if len(optionsList) > 0 {
+                for ; projectedStrengthMap[sq.X][sq.Y] > 255 + g.StrengthBuffer; {
+                    n := optionsList[i]
+                    projectedStrengthMap[sq.X][sq.Y] -= n.Strength
+                    projectedStrengthMap[n.X][n.Y] += n.Strength
+                    g.makeMove(n, 4)
+                }
             }
         }
     }
@@ -1357,21 +1693,24 @@ func Add2d(arr1 [][]float64, arr2 [][]float64) [][]float64 {
 func main() {
     f, _ := os.OpenFile("gologfile.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
     log.SetOutput(f)
-    log.Println("Hi")
+    log.Println("newgame")
     game := NewGame()
+    log.Println("GameInitDone")
     for {
+        log.Println("getting frame")
         game.getFrame()
+        log.Println("doing update")
         game.update()
-
+        log.Println("getting moves")
         game.getMoves()
-
+        log.Println("doing coll 1")
         collision_check := 998
         last_collision_check := 999
         for ; collision_check < last_collision_check ; {
             last_collision_check = collision_check
             collision_check = game.lastResortStrengthCheck()
         }
-
+        log.Println("doing coll 2")
         collision_check = 998
         last_collision_check = 999
         for ; collision_check < last_collision_check ; {
@@ -1379,14 +1718,17 @@ func main() {
             collision_check = game.lastResortStrengthCheck()
         }
 
+        log.Println("doing coll 3")
+
         collision_check = 998
         last_collision_check = 999
         for ; collision_check < last_collision_check ; {
             last_collision_check = collision_check
             collision_check = game.lastResortStrengthCheck()
         }
-
+        log.Println("sending framw")
         game.sendFrame()
+        log.Println("turn done")
     }
 }
 
@@ -1711,5 +2053,33 @@ func (s ByBorderDistance) Swap(i, j int) {
 }
 
 func (s ByBorderDistance) Less(i, j int) bool {
-    return s[i].Game.DistanceFromBorder[s[i].X][s[i].Y] < s[j].Game.DistanceFromBorder[s[j].X][s[j].Y]
+    return s[i].DistanceFromBorder < s[j].DistanceFromBorder
+}
+
+type ByEnemyStrength2 []*Square
+
+func (s ByEnemyStrength2) Len() int {
+    return len(s)
+}
+
+func (s ByEnemyStrength2) Swap(i, j int) {
+    s[i], s[j] = s[j], s[i]
+}
+
+func (s ByEnemyStrength2) Less(i, j int) bool {
+    return s[i].EnemyStrengthMap2 < s[j].EnemyStrengthMap2
+}
+
+type ByEnemyStrength4 []*Square
+
+func (s ByEnemyStrength4) Len() int {
+    return len(s)
+}
+
+func (s ByEnemyStrength4) Swap(i, j int) {
+    s[i], s[j] = s[j], s[i]
+}
+
+func (s ByEnemyStrength4) Less(i, j int) bool {
+    return s[i].EnemyStrengthMap4 < s[j].EnemyStrengthMap4
 }
