@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v61-2-1"
 strength_buffer = 0
 print_maps = False
 profile = False
@@ -190,9 +190,9 @@ class Game:
 
     def set_configs(self):
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
-        self.pre_combat_threshold = -3
-        self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)  # Need to test various values of this later.
+        self.pre_combat_threshold = 2
+        self.combat_radius = 6
+        self.production_cells_out = 1 # Need to test various values of this later.
         self.phase = 0
 
     def update_configs(self):
@@ -200,7 +200,7 @@ class Game:
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 7)
         self.buildup_multiplier = self.buildup_multiplier - (self.distance_from_border ** 0.4)
         # self.combat_radius = int(min(max(5, self.percent_owned * self.width / 2), self.width // 2))
-        self.combat_radius = 8
+        self.combat_radius = 6
 
         if self.percent_owned > 0.6:
             self.buildup_multiplier -= 1
@@ -211,10 +211,10 @@ class Game:
             self.buildup_multiplier += 1
 
     def update(self):
-        # start = time.time()
+        start = time.time()
         self.update_maps()
-        # end = time.time()
-        # logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
         self.update_stats()
         self.update_configs()
 
@@ -226,12 +226,15 @@ class Game:
         self.update_owner_maps()
 
         self.update_border_maps()
-        # start = time.time()
+        start = time.time()
         self.update_enemy_maps()
-        # end = time.time()
-        # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
-        # start = time.time()
+        end = time.time()
+        logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
+        start = time.time()
         self.update_value_production_map()
+        end = time.time()
+        logging.debug("update_valuemaps Frame: " + str(game.frame) + " : " + str(end - start))
+        
         self.update_controlled_influence_production_maps()
 
     def update_calc_maps(self):
@@ -251,6 +254,7 @@ class Game:
         self.border_map = np.zeros((self.width, self.height), dtype=int)
         self.combat_zone_map = np.zeros((self.width, self.height), dtype=int)
         
+        self.border_map = np.copy(self.is_owned_map)
         self.border_map += roll_xy(self.is_owned_map, 0, 1)
         self.border_map += roll_xy(self.is_owned_map, 0, -1)
         self.border_map += roll_xy(self.is_owned_map, 1, 0)
@@ -303,7 +307,7 @@ class Game:
         gb_map[gb_map == 0] = 9999
         
         for g in global_targets:
-            if self.base_value_map[g.x, g.y] > 0.02:
+            if self.base_value_map[g.x, g.y] > 0.02 and self.is_neutral_map[g.x, g.y]:
                 # Find the closest border square that routes to g
                 gb_map = self.dij_recov_distance_map[g.x, g.y] * (self.border_map - self.combat_zone_map)
                 gb_map[gb_map == 0] = 9999
@@ -336,21 +340,21 @@ class Game:
         # Find super high production cells
         self.get_pre_combat_production()
         # 1 - Find combat zone cells and attack them.
-#        start = time.time()
+        start = time.time()
         self.get_moves_attack()
-#        end = time.time()
-#        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
         self.get_moves_prepare_strength()
         # 2 - Find production zone cells and attack them
-#        start = time.time()
-        self.get_moves_production()
-#        end = time.time()
-#        logging.debug("get production moves Frame: " + str(game.frame) + " : " + str(end - start))
+        start = time.time()
+        # self.get_moves_production()
+        end = time.time()
+        logging.debug("get production moves Frame: " + str(game.frame) + " : " + str(end - start))
         # 3 - Move all other unassigned cells.
-#        start = time.time()
+        start = time.time()
         self.get_moves_other()
-#        end = time.time()
-#        logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
 
     def get_pre_combat_production(self):
         # In the event we are trying to fight in a very high production zone, reroute some attacking power to expand in this area.
@@ -549,28 +553,39 @@ class Game:
                     value_map = (self.value_production_map + self.distance_map_no_decay[square.x, square.y] * 1) * self.border_map
                     value_map[np.nonzero(self.combat_zone_map)] = 0
                     value_map += self.distance_map_no_decay[square.x, square.y] * 0.66 * self.combat_zone_map
-                    value_map -= self.controlled_production_influence_map[5, square.x, square.y] * 5 * self.combat_zone_map
+                    # value_map -= self.controlled_production_influence_map[5, square.x, square.y] * 5 * self.combat_zone_map
                     value_map[value_map == 0] = 9999
                     tx, ty = np.unravel_index(value_map.argmin(), (self.width, self.height))
                     target = self.squares[tx, ty]
+                    logging.debug(str(tx) + "/" + str(ty))
                     
                     # We're targeting either a combat square, or a production square. Don't move towards close production squares.
-                    if self.distance_between(square, target) < 6 and self.distance_from_combat_zone[square.x, square.y] < 7:
+                    if self.distance_between(square, target) < 5 and self.distance_from_combat_zone[square.x, square.y] < 6:
                         if (square.x + square.y) % 2 != game.frame % 2:
                             continue
 
                     if (self.enemy_strength_map[3, square.x, square.y] > 0) and (((square.x + square.y) % 2) != (game.frame % 2)):
                         self.make_move(square, STILL, None)
                     elif self.combat_zone_map[tx, ty]:
-                        if self.distance_between(square, target) > 14:
+                        if max(self.width, self.height) > 44 and self.distance_between(square, target) > 10:
+                            self.find_nearest_non_owned_border(square)
+                        elif self.distance_between(square, target) > 14:
                             self.move_square_to_target_simple(square, target, True)
                         elif self.distance_between(square, target) > 1:
                             self.move_square_to_target(square, target, True)
+                        elif self.distance_between(square, target) == 1:
+                            self.move_square_to_target_simple(square, target, False)
                     else:
+                        if max(self.width, self.height) > 44 and self.distance_between(square, target) > 10:
+                            self.find_nearest_non_owned_border(square)
                         if self.distance_between(square, target) > 14:
                             self.move_square_to_target_simple(square, target, True)
-                        elif self.distance_between(square, target) > self.production_cells_out - 1:
+                        elif self.distance_between(square, target) > max(self.production_cells_out - 1, 1):
                             self.move_square_to_target(square, target, True)
+                        elif self.distance_between(square, target) == 1:
+                            if square.strength > target.strength: 
+                                self.move_square_to_target_simple(square, target, False)
+
 
     def distance_between(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)
@@ -1217,12 +1232,6 @@ def game_loop():
     game.update()
 
     game.get_moves()
-
-    collision_check = 998
-    last_collision_check = 999
-    while collision_check < last_collision_check:
-        last_collision_check = collision_check
-        collision_check = game.last_resort_strength_check()
 
     collision_check = 998
     last_collision_check = 999

@@ -16,7 +16,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v61-1"
 strength_buffer = 0
 print_maps = False
 profile = False
@@ -211,10 +211,10 @@ class Game:
             self.buildup_multiplier += 1
 
     def update(self):
-        # start = time.time()
+        start = time.time()
         self.update_maps()
-        # end = time.time()
-        # logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
         self.update_stats()
         self.update_configs()
 
@@ -226,12 +226,15 @@ class Game:
         self.update_owner_maps()
 
         self.update_border_maps()
-        # start = time.time()
+        start = time.time()
         self.update_enemy_maps()
-        # end = time.time()
-        # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
-        # start = time.time()
+        end = time.time()
+        logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
+        start = time.time()
         self.update_value_production_map()
+        end = time.time()
+        logging.debug("update_valuemaps Frame: " + str(game.frame) + " : " + str(end - start))
+        
         self.update_controlled_influence_production_maps()
 
     def update_calc_maps(self):
@@ -336,21 +339,21 @@ class Game:
         # Find super high production cells
         self.get_pre_combat_production()
         # 1 - Find combat zone cells and attack them.
-#        start = time.time()
+        start = time.time()
         self.get_moves_attack()
-#        end = time.time()
-#        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
         self.get_moves_prepare_strength()
         # 2 - Find production zone cells and attack them
-#        start = time.time()
+        start = time.time()
         self.get_moves_production()
-#        end = time.time()
-#        logging.debug("get production moves Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get production moves Frame: " + str(game.frame) + " : " + str(end - start))
         # 3 - Move all other unassigned cells.
-#        start = time.time()
+        start = time.time()
         self.get_moves_other()
-#        end = time.time()
-#        logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
 
     def get_pre_combat_production(self):
         # In the event we are trying to fight in a very high production zone, reroute some attacking power to expand in this area.
@@ -562,7 +565,9 @@ class Game:
                     if (self.enemy_strength_map[3, square.x, square.y] > 0) and (((square.x + square.y) % 2) != (game.frame % 2)):
                         self.make_move(square, STILL, None)
                     elif self.combat_zone_map[tx, ty]:
-                        if self.distance_between(square, target) > 14:
+                        if max(self.width, self.height) > 44 and self.distance_between(square, target) > 10:
+                            self.find_nearest_non_owned_border(square)
+                        elif self.distance_between(square, target) > 14:
                             self.move_square_to_target_simple(square, target, True)
                         elif self.distance_between(square, target) > 1:
                             self.move_square_to_target(square, target, True)
@@ -1217,12 +1222,6 @@ def game_loop():
     game.update()
 
     game.get_moves()
-
-    collision_check = 998
-    last_collision_check = 999
-    while collision_check < last_collision_check:
-        last_collision_check = collision_check
-        collision_check = game.last_resort_strength_check()
 
     collision_check = 998
     last_collision_check = 999

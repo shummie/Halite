@@ -2,7 +2,7 @@
 # Imports
 # ==============================================================================
 import functools
-import cProfile
+import cProfile, pstats, io
 import itertools
 import logging
 import math
@@ -16,10 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v60-2-1"
 strength_buffer = 0
 print_maps = False
-profile = False
+
 
 def print_map(npmap, name):
     directory = "Maps/"
@@ -159,7 +159,7 @@ class Game:
         self.dij_recov_cost, self.dij_recov_route = scipy.sparse.csgraph.dijkstra(dij_recov_costs, return_predecessors=True)
 
         self.dij_recov_distance_map = np.zeros((self.width, self.height, self.width, self.height))
-        self.dij_recov_route_map = np.zeros((self.width, self.height, self.width, self.height), dtype=int)
+        self.dij_recov_route_map = np.zeros((self.width, self.height, self.width, self.height))
 
         for x in range(self.width):
             for y in range(self.height):
@@ -171,7 +171,7 @@ class Game:
         # self.distance_map[x, y, :, :] returns an array of (width, height) that gives the distance (x, y) is from (i, j) for all i, j
         # Note that the actual distance from x, y, to i, j is set to 1 to avoid divide by zero errors. Anything that utilizes this function should be aware of this fact.
         # Create the base map for 0, 0
-        zero_zero_map = np.zeros((self.width, self.height), dtype=int)
+        zero_zero_map = np.zeros((self.width, self.height))
 
         for x in range(self.width):
             for y in range(self.height):
@@ -181,7 +181,7 @@ class Game:
         if falloff != 1:
             zero_zero_map = zero_zero_map ** falloff
 
-        distance_map = np.zeros((self.width, self.height, self.width, self.height), dtype=int)
+        distance_map = np.zeros((self.width, self.height, self.width, self.height))
         for x in range(self.width):
             for y in range(self.height):
                 distance_map[x, y, :, :] = roll_xy(zero_zero_map, x, y)
@@ -192,7 +192,7 @@ class Game:
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         self.pre_combat_threshold = -3
         self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)  # Need to test various values of this later.
+        self.production_cells_out = 4  # Need to test various values of this later.
         self.phase = 0
 
     def update_configs(self):
@@ -239,17 +239,17 @@ class Game:
         self.strength_map_1 = np.maximum(self.strength_map, 1)
 
     def update_owner_maps(self):
-        self.is_owned_map = np.zeros((self.width, self.height), dtype=int)
-        self.is_neutral_map = np.zeros((self.width, self.height), dtype=int)
-        self.is_enemy_map = np.zeros((self.width, self.height), dtype=int)
+        self.is_owned_map = np.zeros((self.width, self.height))
+        self.is_neutral_map = np.zeros((self.width, self.height))
+        self.is_enemy_map = np.zeros((self.width, self.height))
 
         self.is_owned_map[np.where(self.owner_map == self.my_id)] = 1
         self.is_neutral_map[np.where(self.owner_map == 0)] = 1
         self.is_enemy_map = 1 - self.is_owned_map - self.is_neutral_map
 
     def update_border_maps(self):
-        self.border_map = np.zeros((self.width, self.height), dtype=int)
-        self.combat_zone_map = np.zeros((self.width, self.height), dtype=int)
+        self.border_map = np.zeros((self.width, self.height))
+        self.combat_zone_map = np.zeros((self.width, self.height))
         
         self.border_map += roll_xy(self.is_owned_map, 0, 1)
         self.border_map += roll_xy(self.is_owned_map, 0, -1)
@@ -299,11 +299,8 @@ class Game:
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
         self.global_border_map = np.zeros((self.width, self.height))
 
-        gb_map = self.dij_recov_distance_map * (self.border_map - self.combat_zone_map)
-        gb_map[gb_map == 0] = 9999
-        
         for g in global_targets:
-            if self.base_value_map[g.x, g.y] > 0.02:
+            if self.base_value_map[g.x, g.y] > 0.045:
                 # Find the closest border square that routes to g
                 gb_map = self.dij_recov_distance_map[g.x, g.y] * (self.border_map - self.combat_zone_map)
                 gb_map[gb_map == 0] = 9999
@@ -903,7 +900,7 @@ class Game:
         # Does a BFS flood fill to find shortest distance from source to target.
         # Starts the fill AT destination and then stops once we hit the target.
         q = [destination]
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         distance_matrix[destination.x, destination.y] = 0
         while len(q) > 0 and distance_matrix[source.x, source.y] == -1:
             current = q.pop(0)
@@ -920,7 +917,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
         # q is a queue(list) of items (cell, distance)
         q = [source]
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         distance_matrix[source.x, source.y] = 0
 
         while len(q) > 0:
@@ -938,7 +935,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
         # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
         q = sources
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         for source in q:
             distance_matrix[source.x, source.y] = 0
 
@@ -957,7 +954,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
         # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
         q = sources
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         for source in q:
             distance_matrix[source.x, source.y] = 0
 
@@ -977,7 +974,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through non owned cells only.
         # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
         q = sources
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         for source in q:
             distance_matrix[source.x, source.y] = 0
 
@@ -996,7 +993,7 @@ class Game:
         # Calculates the projected strength map and identifies squares that are violating it.
         # Ignore strength overloads due to production for now
         # Validate moves
-        projected_strength_map = np.zeros((self.width, self.height), dtype=int)
+        projected_strength_map = np.zeros((self.width, self.height))
         # We only care about our moves.
         for square in itertools.chain.from_iterable(self.squares):
             if square.owner == self.my_id:
@@ -1248,9 +1245,8 @@ logging.basicConfig(filename='logging.log', level=logging.DEBUG)
 NORTH, EAST, SOUTH, WEST, STILL = range(5)
 directions = [NORTH, EAST, SOUTH, WEST, STILL]
 
-if (profile):
-    pr = cProfile.Profile()
-    pr.enable()
+pr = cProfile.Profile()
+pr.enable()
 
 game = Game()
 
@@ -1258,9 +1254,9 @@ while True:
 
     game_loop()
     
-    if profile and game.frame == 199:
+    if game.frame == 199:
         pr.disable()
-        pr.dump_stats("/home/rshuo/python/halite/test5.prof")
+        pr.dump_stats("/home/rshuo/python/halite/test2.prof")
 
         
 

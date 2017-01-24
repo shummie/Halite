@@ -2,7 +2,7 @@
 # Imports
 # ==============================================================================
 import functools
-import cProfile
+import cProfile, pstats, io
 import itertools
 import logging
 import math
@@ -16,10 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v60-2-3"
 strength_buffer = 0
 print_maps = False
-profile = False
+
 
 def print_map(npmap, name):
     directory = "Maps/"
@@ -192,7 +192,7 @@ class Game:
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         self.pre_combat_threshold = -3
         self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)  # Need to test various values of this later.
+        self.production_cells_out = 4  # Need to test various values of this later.
         self.phase = 0
 
     def update_configs(self):
@@ -299,11 +299,8 @@ class Game:
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
         self.global_border_map = np.zeros((self.width, self.height))
 
-        gb_map = self.dij_recov_distance_map * (self.border_map - self.combat_zone_map)
-        gb_map[gb_map == 0] = 9999
-        
         for g in global_targets:
-            if self.base_value_map[g.x, g.y] > 0.02:
+            if self.base_value_map[g.x, g.y] > 0.045:
                 # Find the closest border square that routes to g
                 gb_map = self.dij_recov_distance_map[g.x, g.y] * (self.border_map - self.combat_zone_map)
                 gb_map[gb_map == 0] = 9999
@@ -1248,9 +1245,8 @@ logging.basicConfig(filename='logging.log', level=logging.DEBUG)
 NORTH, EAST, SOUTH, WEST, STILL = range(5)
 directions = [NORTH, EAST, SOUTH, WEST, STILL]
 
-if (profile):
-    pr = cProfile.Profile()
-    pr.enable()
+pr = cProfile.Profile()
+pr.enable()
 
 game = Game()
 
@@ -1258,9 +1254,9 @@ while True:
 
     game_loop()
     
-    if profile and game.frame == 199:
+    if game.frame == 199:
         pr.disable()
-        pr.dump_stats("/home/rshuo/python/halite/test5.prof")
+        pr.dump_stats("/home/rshuo/python/halite/test4.prof")
 
         
 

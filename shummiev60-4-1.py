@@ -16,10 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v60-4-1"
 strength_buffer = 0
 print_maps = False
-profile = False
+profile = True
 
 def print_map(npmap, name):
     directory = "Maps/"
@@ -299,11 +299,8 @@ class Game:
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
         self.global_border_map = np.zeros((self.width, self.height))
 
-        gb_map = self.dij_recov_distance_map * (self.border_map - self.combat_zone_map)
-        gb_map[gb_map == 0] = 9999
-        
         for g in global_targets:
-            if self.base_value_map[g.x, g.y] > 0.02:
+            if self.base_value_map[g.x, g.y] > 0.045:
                 # Find the closest border square that routes to g
                 gb_map = self.dij_recov_distance_map[g.x, g.y] * (self.border_map - self.combat_zone_map)
                 gb_map[gb_map == 0] = 9999
@@ -1260,7 +1257,7 @@ while True:
     
     if profile and game.frame == 199:
         pr.disable()
-        pr.dump_stats("/home/rshuo/python/halite/test5.prof")
+        pr.dump_stats("/home/rshuo/python/halite/test4.prof")
 
         
 

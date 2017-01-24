@@ -16,10 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v60-4-2"
 strength_buffer = 0
 print_maps = False
-profile = False
+profile = True
 
 def print_map(npmap, name):
     directory = "Maps/"

@@ -2,7 +2,7 @@
 # Imports
 # ==============================================================================
 import functools
-import cProfile
+import cProfile, pstats, io
 import itertools
 import logging
 import math
@@ -16,10 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v60"
+botname = "shummie v59"
 strength_buffer = 0
 print_maps = False
-profile = False
+
 
 def print_map(npmap, name):
     directory = "Maps/"
@@ -46,7 +46,8 @@ class Game:
         self.create_squares_list()
 
         self.frame = -1
-        
+        self.phase = 0
+
         self.get_frame()
 
         self.starting_player_count = np.amax(self.owner_map)  # Note, for range you'd need to increase the range by 1
@@ -128,7 +129,7 @@ class Game:
                 self.squares[x, y].after_init_update()
 
     def create_one_time_maps(self):
-        # self.distance_map = self.create_distance_map()
+        self.distance_map = self.create_distance_map()
         self.distance_map_no_decay = self.create_distance_map(1)
 
         self.production_map_01 = np.maximum(self.production_map, 0.1)
@@ -159,7 +160,7 @@ class Game:
         self.dij_recov_cost, self.dij_recov_route = scipy.sparse.csgraph.dijkstra(dij_recov_costs, return_predecessors=True)
 
         self.dij_recov_distance_map = np.zeros((self.width, self.height, self.width, self.height))
-        self.dij_recov_route_map = np.zeros((self.width, self.height, self.width, self.height), dtype=int)
+        self.dij_recov_route_map = np.zeros((self.width, self.height, self.width, self.height))
 
         for x in range(self.width):
             for y in range(self.height):
@@ -170,18 +171,18 @@ class Game:
         # Creates a distance map so that we can easily divide a map to get ratios that we are interested in
         # self.distance_map[x, y, :, :] returns an array of (width, height) that gives the distance (x, y) is from (i, j) for all i, j
         # Note that the actual distance from x, y, to i, j is set to 1 to avoid divide by zero errors. Anything that utilizes this function should be aware of this fact.
+
         # Create the base map for 0, 0
-        zero_zero_map = np.zeros((self.width, self.height), dtype=int)
+        zero_zero_map = np.zeros((self.width, self.height))
 
         for x in range(self.width):
             for y in range(self.height):
                 dist_x = min(x, -x % self.width)
                 dist_y = min(y, -y % self.width)
                 zero_zero_map[x, y] = max(dist_x + dist_y, 1)
-        if falloff != 1:
-            zero_zero_map = zero_zero_map ** falloff
+        zero_zero_map = zero_zero_map ** falloff
 
-        distance_map = np.zeros((self.width, self.height, self.width, self.height), dtype=int)
+        distance_map = np.zeros((self.width, self.height, self.width, self.height))
         for x in range(self.width):
             for y in range(self.height):
                 distance_map[x, y, :, :] = roll_xy(zero_zero_map, x, y)
@@ -192,8 +193,11 @@ class Game:
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
         self.pre_combat_threshold = -3
         self.combat_radius = 8
-        self.production_cells_out = int(self.width / self.starting_player_count / 1.5)  # Need to test various values of this later.
+        self.production_cells_out = 4
         self.phase = 0
+        # Find the "global max"
+        self.global_max_square = None
+        self.total_avg_cost_to_global = 0
 
     def update_configs(self):
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 5), 5)
@@ -239,25 +243,25 @@ class Game:
         self.strength_map_1 = np.maximum(self.strength_map, 1)
 
     def update_owner_maps(self):
-        self.is_owned_map = np.zeros((self.width, self.height), dtype=int)
-        self.is_neutral_map = np.zeros((self.width, self.height), dtype=int)
-        self.is_enemy_map = np.zeros((self.width, self.height), dtype=int)
+        self.is_owned_map = np.zeros((self.width, self.height))
+        self.is_neutral_map = np.zeros((self.width, self.height))
+        self.is_enemy_map = np.zeros((self.width, self.height))
 
         self.is_owned_map[np.where(self.owner_map == self.my_id)] = 1
         self.is_neutral_map[np.where(self.owner_map == 0)] = 1
         self.is_enemy_map = 1 - self.is_owned_map - self.is_neutral_map
 
     def update_border_maps(self):
-        self.border_map = np.zeros((self.width, self.height), dtype=int)
-        self.combat_zone_map = np.zeros((self.width, self.height), dtype=int)
-        
-        self.border_map += roll_xy(self.is_owned_map, 0, 1)
-        self.border_map += roll_xy(self.is_owned_map, 0, -1)
-        self.border_map += roll_xy(self.is_owned_map, 1, 0)
-        self.border_map += roll_xy(self.is_owned_map, -1, 0)
-        
-        self.border_map = np.minimum(self.border_map, 1)
-        self.border_map -= self.is_owned_map
+        self.border_map = np.zeros((self.width, self.height))
+        # self.inner_border_map = np.zeros((self.width, self.height))
+        self.combat_zone_map = np.zeros((self.width, self.height))
+
+        for square in itertools.chain.from_iterable(self.squares):
+            if square.owner == 0:
+                for n in square.neighbors:
+                    if n.owner == self.my_id:
+                        self.border_map[square.x, square.y] = 1
+                        continue
 
         border_squares_indices = np.transpose(np.nonzero(self.border_map))
         border_squares = [self.squares[c[0], c[1]] for c in border_squares_indices]
@@ -265,7 +269,9 @@ class Game:
 
         owned_squares_indices = np.transpose(np.nonzero(self.is_owned_map))
         owned_squares = [self.squares[c[0], c[1]] for c in owned_squares_indices]
-        
+        # self.distance_from_owned = self.non_friendly_flood_fill_multiple_sources(owned_squares, max(self.width, self.height))
+        # print_map(self.distance_from_owned, "distance_from_owned")
+
         self.combat_zone_map = self.border_map * (self.strength_map == 0)
 
         if self.starting_player_count > 1 and np.sum(self.combat_zone_map) >= 1:  # Breaks in single player mode otherwise.
@@ -299,11 +305,8 @@ class Game:
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
         self.global_border_map = np.zeros((self.width, self.height))
 
-        gb_map = self.dij_recov_distance_map * (self.border_map - self.combat_zone_map)
-        gb_map[gb_map == 0] = 9999
-        
         for g in global_targets:
-            if self.base_value_map[g.x, g.y] > 0.02:
+            if self.base_value_map[g.x, g.y] > 0.03:
                 # Find the closest border square that routes to g
                 gb_map = self.dij_recov_distance_map[g.x, g.y] * (self.border_map - self.combat_zone_map)
                 gb_map[gb_map == 0] = 9999
@@ -313,10 +316,13 @@ class Game:
         self.value_production_map = 1 / np.maximum(self.base_value_map + self.global_border_map * 1, 0.001)
 
         self.value_production_map *= (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)
+        # self.value_production_map = (self.border_map - self.combat_zone_map) * self.recover_wtd_map
         self.value_production_map[self.value_production_map == 0] = 9999
         turns_left = self.max_turns - self.frame
         recover_threshold = turns_left * 0.6
         self.value_production_map[self.value_production_map > recover_threshold] == 9999
+        # bx, by = np.unravel_index(self.value_production_map.argmin(), (self.width, self.height))
+        # best_cell_value = self.value_production_map[bx, by]
 
         avg_recov_threshold = 2
         # avg_map_recovery = np.sum(self.strength_map * (self.border_map - self.combat_zone_map)) / np.sum(self.production_map * (self.border_map - self.combat_zone_map))
@@ -369,23 +375,27 @@ class Game:
 
     def get_moves_attack(self):
         # Attempts to attack all border cells that are in combat
-        combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
-
-        combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
+        potential_targets_indices = np.transpose(np.nonzero(self.combat_zone_map))
+        potential_targets = [self.squares[c[0], c[1]] for c in potential_targets_indices]
+        # potential_targets.sort(key = lambda x: self.distance_from_enemy[x.x, x.y])
+        potential_targets.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
 
         # TODO: Should sort by amount of overkill damage possible.
-        for square in combat_zone_squares:
+        for square in potential_targets:
             self.attack_cell(square, 1)
 
         self.get_moves_breakthrough()
         # Get a list of all squares within 5 spaces of a combat zone.
-        # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?       
+        # TODO: This causes bounciness, i should probably do a floodfill of all combat zone squares instead?
+        combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
         combat_distance_matrix = self.friendly_flood_fill_multiple_sources(combat_zone_squares, self.combat_radius)
+        # np.savetxt("Masps\maps%i.txt" % self.frame, combat_distance_matrix)
         # combat_distance_matrix[combat_distance_matrix == -1] = 0
         # combat_distance_matrix[combat_distance_matrix == 1] = 0
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
         combat_squares.sort(key=lambda x: x.strength, reverse=True)
-        
+        # combat_squares_indices = np.transpose(np.nonzero((self.distance_from_combat_zone <= combat_radius) * (self.move_map == -1)))
+        # combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
         print_map(combat_distance_matrix, "combat_distance_matrix_")
 
         for square in combat_squares:
@@ -410,15 +420,18 @@ class Game:
                         if success:
                             break
             elif (square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + self.distance_from_combat_zone[square.x, square.y]))) and ((square.x + square.y) % 2 == self.frame % 2) and square.move == -1 and square.moving_here == []:
+                # self.move_towards_map(square, self.distance_from_combat_zone)
                 self.move_towards_map_old(square, combat_distance_matrix)
+            # elif square.strength > square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
+            # elif square.strength >= square.production and square.move == -1 and self.distance_from_combat_zone[square.x, square.y] < 2:
 
             else:
                 if combat_distance_matrix[square.x, square.y] > 1:
                     self.make_move(square, STILL, None)
 
     def find_nearest_non_owned_border(self, square):
+
         current_distance = self.distance_from_border[square.x, square.y]
-        # Todo, minor optimization by moving to lower production square if possible.
         for n in square.neighbors:
             if self.is_owned_map[n.x, n.y]:
                 if self.distance_from_border[n.x, n.y] < current_distance:
@@ -461,6 +474,9 @@ class Game:
 
     def get_moves_prepare_strength(self):
         # Attempts to build up strength prior to an immediate engagement, only if we aren't already in combat
+        # if np.sum(self.combat_zone_map) > 0:
+        #     return
+
         border_prepare_indices = np.transpose(np.nonzero(self.border_map * self.enemy_strength_map[1] > 0))
         enemy_border_squares = [self.squares[c[0], c[1]] for c in border_prepare_indices]
 
@@ -505,14 +521,15 @@ class Game:
         potential_targets.sort(key=lambda x: x[1] + (x[2] * 1))
 
         # Keep only the top 80ile?
-        percentile = 0.85
-        cutoff = int(len(potential_targets) * percentile)
-        potential_targets = potential_targets[:cutoff]
-        remove_targets = potential_targets[cutoff:]
+        # potential_targets = potential_targets[0:int(len(potential_targets) * .9)]
+        remove_targets = potential_targets[int(len(potential_targets) * 0.85):]
         for t in remove_targets:
+            potential_targets.remove(t)
             self.value_production_map[t[0].x, t[0].y] = 9999
 
-        while len(potential_targets) > 0:
+        # best_target_value = potential_targets[0][1]
+        # anything with X of the best_value target should be considered. Let's set this to 4 right now.
+        while len(potential_targets) > 0:  # and potential_targets[0][1] <= (best_target_value + 4000):
             target = potential_targets.pop(0)
             success = self.attack_cell(target[0], target[2], target[2])
             if success and target[2] < self.production_cells_out:
@@ -531,6 +548,7 @@ class Game:
                 self.attack_cell(square, 1)
 
     def get_moves_other(self):
+        # Tries to move to
         idle_squares_indices = np.transpose(np.nonzero((self.move_map == -1) * self.is_owned_map))
         idle_squares = [self.squares[c[0], c[1]] for c in idle_squares_indices]
 
@@ -544,16 +562,22 @@ class Game:
             if square.strength > square.production * self.buildup_multiplier[square.x, square.y] and square.move == -1 and square.moving_here == []:
                 if self.percent_owned > 0.65:
                     self.find_nearest_non_owned_border(square)
+                    # self.move_towards_map(square, self.distance_from_border)
                 else:
                     # Move towards the closest border
+                    # if not self.inner_border_map[square.x, square.y]:
+                        # For now, move to the square with the lowest recovery
                     value_map = (self.value_production_map + self.distance_map_no_decay[square.x, square.y] * 1) * self.border_map
+                    # best_target_value = (self.recover_wtd_map * (self.border_map - self.combat_zone_map)).argmin()
+                    # value_map = value_map * (1 - self.combat_zone_map)
                     value_map[np.nonzero(self.combat_zone_map)] = 0
                     value_map += self.distance_map_no_decay[square.x, square.y] * 0.66 * self.combat_zone_map
                     value_map -= self.controlled_production_influence_map[5, square.x, square.y] * 5 * self.combat_zone_map
+                    # value_map[self.combat_zone_map == 1] = self.distance_map_no_decay[square.x, square.y] * .8
                     value_map[value_map == 0] = 9999
+                    # tx, ty = np.unravel_index(value_map.argmin(), (self.width, self.height))
                     tx, ty = np.unravel_index(value_map.argmin(), (self.width, self.height))
                     target = self.squares[tx, ty]
-                    
                     # We're targeting either a combat square, or a production square. Don't move towards close production squares.
                     if self.distance_between(square, target) < 6 and self.distance_from_combat_zone[square.x, square.y] < 7:
                         if (square.x + square.y) % 2 != game.frame % 2:
@@ -903,7 +927,7 @@ class Game:
         # Does a BFS flood fill to find shortest distance from source to target.
         # Starts the fill AT destination and then stops once we hit the target.
         q = [destination]
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         distance_matrix[destination.x, destination.y] = 0
         while len(q) > 0 and distance_matrix[source.x, source.y] == -1:
             current = q.pop(0)
@@ -920,7 +944,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
         # q is a queue(list) of items (cell, distance)
         q = [source]
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         distance_matrix[source.x, source.y] = 0
 
         while len(q) > 0:
@@ -938,7 +962,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
         # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
         q = sources
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         for source in q:
             distance_matrix[source.x, source.y] = 0
 
@@ -957,7 +981,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through friendly owned cells only.
         # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
         q = sources
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         for source in q:
             distance_matrix[source.x, source.y] = 0
 
@@ -977,7 +1001,7 @@ class Game:
         # Returns a np.array((self.width, self.height)) that contains the distance to the target by traversing through non owned cells only.
         # q is a queue(list) of items (cell, distance). sources is a list that contains the source cells.
         q = sources
-        distance_matrix = np.ones((self.width, self.height), dtype=int) * -1
+        distance_matrix = np.ones((self.width, self.height)) * -1
         for source in q:
             distance_matrix[source.x, source.y] = 0
 
@@ -996,7 +1020,7 @@ class Game:
         # Calculates the projected strength map and identifies squares that are violating it.
         # Ignore strength overloads due to production for now
         # Validate moves
-        projected_strength_map = np.zeros((self.width, self.height), dtype=int)
+        projected_strength_map = np.zeros((self.width, self.height))
         # We only care about our moves.
         for square in itertools.chain.from_iterable(self.squares):
             if square.owner == self.my_id:
@@ -1116,6 +1140,17 @@ class Square:
 
 def get_offset(direction):
     return ((0, -1), (1, 0), (0, 1), (-1, 0), (0, 0))[direction]
+
+
+def distance_between(x1, y1, x2, y2):
+    dx = abs(x1 - x2)
+    dy = abs(y1 - y2)
+    if dx > game.width / 2:
+        dx = game.width - dx
+    if dy > game.height / 2:
+        dy = game.height - dy
+    return dx + dy
+
 
 def opposite_direction(direction):
     return (direction + 2) % 4 if direction != STILL else STILL
@@ -1248,19 +1283,25 @@ logging.basicConfig(filename='logging.log', level=logging.DEBUG)
 NORTH, EAST, SOUTH, WEST, STILL = range(5)
 directions = [NORTH, EAST, SOUTH, WEST, STILL]
 
-if (profile):
-    pr = cProfile.Profile()
-    pr.enable()
+pr = cProfile.Profile()
+pr.enable()
 
 game = Game()
 
 while True:
+    
+
 
     game_loop()
     
-    if profile and game.frame == 199:
+    if game.frame == 199:
         pr.disable()
-        pr.dump_stats("/home/rshuo/python/halite/test5.prof")
+        pr.dump_stats("/home/rshuo/python/halite/test.prof")
 
+s = io.StringIO()
+sortby = 'cumulative'
+ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+
+ps.print_stats()
         
 
