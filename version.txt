@@ -1,10 +1,17 @@
 History
 --------
-Version 60 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 62 - ?? / ???? - mu: , sigma: - January ?, 2017
+
+Version 61 - ?? / ???? - mu: , sigma: - January 24, 2017
+* More combat tweaks
+* Add'l timeout tweaks for 50x50 maps
+* Fix the small map bug for real, i hope.
+
+Version 60 - 12 / 1427 - mu: 49.52, sigma: 0.69 - January 24, 2017
 * Multiple speed ups. should hopefully fix most timeout issues.
 * Fixed a minor bug occurring in very small maps.
 
-Version 59 - 8 / 1421 - mu: 50.65 , sigma: 0.69 - January ?, 2017
+Version 59 - 8 / 1421 - mu: 50.65 , sigma: 0.69 - January 21, 2017
 * Fix a bug in attack cell that made it search for all cells.
 
 Version 58 - 6 / 1395 - mu: 50.68, sigma: 0.68 - January 20, 2017

@@ -16,11 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v61"
+botname = "shummie v61-3-1"
 strength_buffer = 0
 print_maps = False
 profile = False
-
 
 def print_map(npmap, name):
     directory = "Maps/"
@@ -266,6 +265,9 @@ class Game:
         border_squares_indices = np.transpose(np.nonzero(self.border_map))
         border_squares = [self.squares[c[0], c[1]] for c in border_squares_indices]
         self.distance_from_border = self.friendly_flood_fill_multiple_sources(border_squares, max(self.width, self.height))
+
+        owned_squares_indices = np.transpose(np.nonzero(self.is_owned_map))
+        owned_squares = [self.squares[c[0], c[1]] for c in owned_squares_indices]
 
         self.combat_zone_map = self.border_map * (self.strength_map == 0)
 
@@ -1047,57 +1049,6 @@ class Game:
 
         return violation_count
 
-    def stop_swaps(self):
-        # Check if two squares are swapping places for no reason.
-        for x in range(self.width):
-            for y in range(self.height):
-                if self.is_owned_map[x, y]:
-                    s = self.squares[x, y]
-                    if s.target is not None:
-                        if s.target in s.moving_here:
-                            if abs(s.strength - s.target.strength) < 165:
-                                self.make_move(s.target, STILL, None)
-                                self.make_move(s, STILL, None)
-
-    def check_parity(self):
-        indices = np.transpose(np.nonzero((self.is_owned_map * self.enemy_strength_map[3])))
-        squares = [self.squares[c[0], c[1]] for c in indices]
-
-        for s in squares:
-            if (self.enemy_strength_map[2, s.x, s.y] == 0) and (s.x + s.y) % 2 != game.frame % 2 and (s.move != STILL and s.move != -1):
-                self.make_move(s, STILL, None)
-                future_strength = s.strength + sum(x.strength for x in s.moving_here)
-                if future_strength > 255 + strength_buffer:
-                    s.moving_here.sort(key=lambda x: x.strength)
-                    while future_strength > 255:
-                        future_strength -= s.moving_here[0].strength
-                        self.make_move(s.moving_here[0], STILL, None)
-            elif (self.enemy_strength_map[2, s.x, s.y] > 0) and (s.move == STILL or s.move == -1):
-                # Try to capture a neutral cell
-                neutral_targets = []
-                friendly_targets = []
-                for t in s.neighbors:
-                    if t.owner == self.my_id:
-                        friendly_targets.append(t)
-                    else:
-                        neutral_targets.append(t)
-                friendly_targets.sort(key=lambda x: sum(y.strength for y in x.moving_here))
-                success = False
-                for t in friendly_targets:
-                    future_strength = sum(x.strength for x in t.moving_here) + t.strength if (t.move == STILL or t.move == -1) else 0
-                    if future_strength + s.strength <= 255 + strength_buffer:
-                        success = self.move_square_to_target_simple(s, t, True)
-                        if success:
-                            break
-                if not success:
-                    neutral_targets.sort(key=lambda x: sum(y.strength for y in x.moving_here))
-                    for t in neutral_targets:
-                        future_strength = sum(x.strength for x in t.moving_here)
-                        if future_strength + s.strength <= 255 + strength_buffer:
-                            success = self.move_square_to_target_simple(s, t, False)
-                            if success:
-                                break
-
     def update_stats(self):
         # Updates various stats used for tracking
         self.turns_left = self.max_turns - self.frame
@@ -1170,7 +1121,6 @@ class Square:
 
 def get_offset(direction):
     return ((0, -1), (1, 0), (0, 1), (-1, 0), (0, 0))[direction]
-
 
 def opposite_direction(direction):
     return (direction + 2) % 4 if direction != STILL else STILL
@@ -1273,15 +1223,11 @@ def game_loop():
 
     game.get_moves()
 
-    game.stop_swaps()
-
     collision_check = 998
     last_collision_check = 999
     while collision_check < last_collision_check:
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
-
-    game.check_parity()
 
     collision_check = 998
     last_collision_check = 999
@@ -1314,3 +1260,6 @@ while True:
     if profile and game.frame == 199:
         pr.disable()
         pr.dump_stats("/home/rshuo/python/halite/test5.prof")
+
+
+

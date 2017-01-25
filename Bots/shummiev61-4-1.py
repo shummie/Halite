@@ -16,11 +16,10 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v61"
+botname = "shummie v61-4-1"
 strength_buffer = 0
 print_maps = False
 profile = False
-
 
 def print_map(npmap, name):
     directory = "Maps/"
@@ -266,6 +265,9 @@ class Game:
         border_squares_indices = np.transpose(np.nonzero(self.border_map))
         border_squares = [self.squares[c[0], c[1]] for c in border_squares_indices]
         self.distance_from_border = self.friendly_flood_fill_multiple_sources(border_squares, max(self.width, self.height))
+
+        owned_squares_indices = np.transpose(np.nonzero(self.is_owned_map))
+        owned_squares = [self.squares[c[0], c[1]] for c in owned_squares_indices]
 
         self.combat_zone_map = self.border_map * (self.strength_map == 0)
 
@@ -1171,7 +1173,6 @@ class Square:
 def get_offset(direction):
     return ((0, -1), (1, 0), (0, 1), (-1, 0), (0, 0))[direction]
 
-
 def opposite_direction(direction):
     return (direction + 2) % 4 if direction != STILL else STILL
 
@@ -1314,3 +1315,6 @@ while True:
     if profile and game.frame == 199:
         pr.disable()
         pr.dump_stats("/home/rshuo/python/halite/test5.prof")
+
+
+
