@@ -1,8 +1,16 @@
 History
 --------
-Version 62 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 63 - ?? / ???? - mu: , sigma: - January ?, 2017
 
-Version 61 - ?? / ???? - mu: , sigma: - January 24, 2017
+Version 62 - ?? / ???? - mu: , sigma: - January 27, 2017
+* Don't run away from border when enemy_str[2] > 0
+* Added timeout code
+* minor speedup to dijkstra
+* fix bordermap bug calc
+* Use actual distance through owned instead of distance_map_no_decay through mid game
+* Don't allow using squares that will be moved into for production search
+
+Version 61 - 8 / 1437 - mu: 51.08, sigma: 0.68 - January 24, 2017
 * More combat tweaks
 * Add'l timeout tweaks for 50x50 maps
 * Fix the small map bug for real, i hope.

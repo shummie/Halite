@@ -17,7 +17,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v62"
+botname = "shummie v62-5-5"
 strength_buffer = 0
 print_maps = False
 profile = False
@@ -561,7 +561,7 @@ class Game:
             if (timer() - game.start) > MAX_TURN_TIME:
                 return
             if square.strength > square.production * self.buildup_multiplier[square.x, square.y] and square.move == -1 and square.moving_here == []:
-                if self.percent_owned > 0.75:
+                if self.percent_owned > 0.65:
                     self.find_nearest_non_owned_border(square)
                 else:
                     if np.sum(self.is_owned_map) > 120:

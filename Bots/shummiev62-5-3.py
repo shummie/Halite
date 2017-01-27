@@ -11,17 +11,15 @@ import random
 import scipy.sparse
 import sys
 import time
-from timeit import default_timer as timer
 import copy
 
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v62"
+botname = "shummie v62-5-3"
 strength_buffer = 0
 print_maps = False
 profile = False
-MAX_TURN_TIME = 1.25
 
 
 def print_map(npmap, name):
@@ -217,10 +215,10 @@ class Game:
             self.buildup_multiplier += 1
 
     def update(self):
-        # start = time.time()
+        start = time.time()
         self.update_maps()
-        # end = time.time()
-        # logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("update_maps Frame: " + str(game.frame) + " : " + str(end - start))
         self.update_stats()
         self.update_configs()
 
@@ -232,14 +230,14 @@ class Game:
         self.update_owner_maps()
 
         self.update_border_maps()
-        # start = time.time()
+        start = time.time()
         self.update_enemy_maps()
-        # end = time.time()
-        # logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
-        # start = time.time()
+        end = time.time()
+        logging.debug("update_enemymaps Frame: " + str(game.frame) + " : " + str(end - start))
+        start = time.time()
         self.update_value_production_map()
-        # end = time.time()
-        # logging.debug("update_valuemaps Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("update_valuemaps Frame: " + str(game.frame) + " : " + str(end - start))
 
         self.update_controlled_influence_production_maps()
 
@@ -341,31 +339,23 @@ class Game:
     def get_moves(self):
         # This is the main logic controlling code.
         # Find super high production cells
-        if (timer() - game.start) > MAX_TURN_TIME:
-            return
         self.get_pre_combat_production()
         # 1 - Find combat zone cells and attack them.
-        # start = time.time()
-        if (timer() - game.start) > MAX_TURN_TIME:
-            return
+        start = time.time()
         self.get_moves_attack()
-        # end = time.time()
-        # logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get_move_attack Frame: " + str(game.frame) + " : " + str(end - start))
         # self.get_moves_prepare_strength()
         # 2 - Find production zone cells and attack them
-        # start = time.time()
-        if (timer() - game.start) > MAX_TURN_TIME:
-            return
+        start = time.time()
         self.get_moves_production()
-        # end = time.time()
-        # logging.debug("get production moves Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get production moves Frame: " + str(game.frame) + " : " + str(end - start))
         # 3 - Move all other unassigned cells.
-        # start = time.time()
-        if (timer() - game.start) > MAX_TURN_TIME:
-            return
+        start = time.time()
         self.get_moves_other()
-        # end = time.time()
-        # logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
+        end = time.time()
+        logging.debug("get other moves Frame: " + str(game.frame) + " : " + str(end - start))
 
     def get_pre_combat_production(self):
         # In the event we are trying to fight in a very high production zone, reroute some attacking power to expand in this area.
@@ -528,8 +518,6 @@ class Game:
             self.value_production_map[t[0].x, t[0].y] = 9999
 
         while len(potential_targets) > 0:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             target = potential_targets.pop(0)
             success = self.attack_cell(target[0], target[2], target[2])
             if success and target[2] < self.production_cells_out:
@@ -558,10 +546,8 @@ class Game:
         idle_squares.sort(key=lambda sq: self.distance_from_border[sq.x, sq.y])
 
         for square in idle_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             if square.strength > square.production * self.buildup_multiplier[square.x, square.y] and square.move == -1 and square.moving_here == []:
-                if self.percent_owned > 0.75:
+                if self.percent_owned > 0.65:
                     self.find_nearest_non_owned_border(square)
                 else:
                     if np.sum(self.is_owned_map) > 120:
@@ -1316,41 +1302,30 @@ def get_string():
 
 
 def game_loop():
-    game.start = timer()
+    game.get_frame()
+    # logging.debug("Frame: " + str(game.frame))
 
     game.update()
 
-    if (timer() - game.start) > MAX_TURN_TIME:
-        return
     game.get_moves()
 
-    if (timer() - game.start) > MAX_TURN_TIME:
-        return
     game.stop_swaps()
 
-    if (timer() - game.start) > MAX_TURN_TIME:
-        return
     collision_check = 998
     last_collision_check = 999
     while collision_check < last_collision_check:
         last_collision_check = collision_check
-        if (timer() - game.start) > MAX_TURN_TIME:
-            return
         collision_check = game.last_resort_strength_check()
 
-    if (timer() - game.start) > MAX_TURN_TIME:
-        return
     game.check_parity()
 
-    if (timer() - game.start) > MAX_TURN_TIME:
-        return
     collision_check = 998
     last_collision_check = 999
     while collision_check < last_collision_check:
         last_collision_check = collision_check
-        if (timer() - game.start) > MAX_TURN_TIME:
-            return
         collision_check = game.last_resort_strength_check()
+
+    game.send_frame()
 
 # #####################
 # Game run-time code #
@@ -1370,10 +1345,7 @@ game = Game()
 
 while True:
 
-    game.get_frame()
-    # logging.debug("Frame: " + str(game.frame))
     game_loop()
-    game.send_frame()
 
     if profile and game.frame == 199:
         pr.disable()
