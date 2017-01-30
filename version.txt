@@ -1,8 +1,14 @@
 History
 --------
-Version 63 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 64 - ?? / ???? - mu: , sigma: - January ?, 2017
 
-Version 62 - ?? / ???? - mu: , sigma: - January 27, 2017
+Version 63 - ?? / ???? - mu: , sigma: - January 30, 2017
+* Calculate parity each turn
+* Added sorts to stabilize bot so that different positions don't affect outcome
+* Drastically simplify code for moving all other pieces
+* Revised swap code slightly to allow higher strength pieces to move to border
+
+Version 62 - 4 / 1479 - mu: 52.38, sigma: 0.69 - January 27, 2017
 * Don't run away from border when enemy_str[2] > 0
 * Added timeout code
 * minor speedup to dijkstra

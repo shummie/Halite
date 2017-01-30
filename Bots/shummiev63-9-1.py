@@ -17,7 +17,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v63"
+botname = "shummie v63-9-1"
 strength_buffer = 0
 print_maps = False
 profile = False
@@ -403,12 +403,10 @@ class Game:
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
 
         combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
-        combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[1, x.x, x.y], reverse=True)
 
         # TODO: Should sort by amount of overkill damage possible.
         for square in combat_zone_squares:
-            if square.parity != game.parity:
-                self.attack_cell(square, 1)
+            self.attack_cell(square, 1)
 
         self.get_moves_breakthrough()
         # Get a list of all squares within 5 spaces of a combat zone.
@@ -419,7 +417,6 @@ class Game:
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
         combat_squares.sort(key=lambda x: x.strength, reverse=True)
         combat_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
-        combat_squares.sort(key=lambda x: self.enemy_strength_map[1, x.x, x.y], reverse=True)
 
         print_map(combat_distance_matrix, "combat_distance_matrix_")
 
@@ -479,7 +476,7 @@ class Game:
         # Tries to find the best cells to attack from a production standpoint.
         # Does not try to attack cells that are in combat zones.
         # potential_targets_indices = np.transpose(np.nonzero((self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)))
-        potential_targets_indices = np.transpose(np.nonzero((self.value_production_map < 8000)))
+        potential_targets_indices = np.transpose(np.nonzero((self.value_production_map != 9999)))
         potential_targets = [(self.squares[c[0], c[1]], self.value_production_map[c[0], c[1]], 1) for c in potential_targets_indices]
 
         potential_targets = []
@@ -534,21 +531,42 @@ class Game:
         # Move squares closer to the border first.
         idle_squares.sort(key=lambda sq: sq.strength, reverse=True)
         idle_squares.sort(key=lambda sq: self.distance_from_border[sq.x, sq.y])
-        idle_squares.sort(key=lambda sq: self.distance_from_combat_zone[sq.x, sq.y])
 
         for square in idle_squares:
             if (timer() - game.start) > MAX_TURN_TIME:
                 return
             if square.strength > square.production * self.buildup_multiplier[square.x, square.y] and square.move == -1 and square.moving_here == []:
-                if np.sum(self.combat_zone_map) > 0:
+                if self.percent_owned > 0.65:
                     self.find_nearest_non_owned_border(square)
                 else:
-                    if self.distance_from_combat_zone[square.x, square.y] < 6 and square.parity != game.parity:
-                        continue
-                    if self.enemy_strength_map[3, square.x, square.y] > 0 and square.parity != game.parity:
+                    # Move towards the closest border
+                    value_map = (self.value_production_map + self.distance_map_no_decay[square.x, square.y] * 1) * self.border_map
+                    value_map[np.nonzero(self.combat_zone_map)] = 0
+                    value_map += self.distance_map_no_decay[square.x, square.y] * 0.66 * self.combat_zone_map
+                    value_map -= self.controlled_production_influence_map[5, square.x, square.y] * 5 * self.combat_zone_map
+                    value_map[value_map == 0] = 9999
+                    tx, ty = np.unravel_index(value_map.argmin(), (self.w, self.h))
+                    target = self.squares[tx, ty]
+
+                    # We're targeting either a combat square, or a production square. Don't move towards close production squares.
+                    if self.distance_between(square, target) < 6 and self.distance_from_combat_zone[square.x, square.y] < 7:
+                        if square.parity != game.parity:
+                            continue
+
+                    if (self.enemy_strength_map[3, square.x, square.y] > 0) and (square.parity != game.parity):
                         self.make_move(square, STILL, None)
+                    elif self.combat_zone_map[tx, ty]:
+                        if max(self.w, self.h) > 44 and self.distance_between(square, target) > 10:
+                            self.find_nearest_non_owned_border(square)
+                        elif self.distance_between(square, target) > 14:
+                            self.move_square_to_target_simple(square, target, True)
+                        elif self.distance_between(square, target) > 1:
+                            self.move_square_to_target(square, target, True)
                     else:
-                        self.find_nearest_combat_zone(square)
+                        if self.distance_between(square, target) > 14:
+                            self.move_square_to_target_simple(square, target, True)
+                        elif self.distance_between(square, target) > self.production_cells_out - 1:
+                            self.move_square_to_target(square, target, True)
 
     def distance_between(self, sq1, sq2):
         dx = abs(sq1.x - sq2.x)

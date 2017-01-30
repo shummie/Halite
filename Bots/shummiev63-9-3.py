@@ -17,7 +17,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v63"
+botname = "shummie v63-9-3"
 strength_buffer = 0
 print_maps = False
 profile = False
@@ -403,7 +403,6 @@ class Game:
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
 
         combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
-        combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[1, x.x, x.y], reverse=True)
 
         # TODO: Should sort by amount of overkill damage possible.
         for square in combat_zone_squares:
@@ -419,7 +418,6 @@ class Game:
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
         combat_squares.sort(key=lambda x: x.strength, reverse=True)
         combat_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
-        combat_squares.sort(key=lambda x: self.enemy_strength_map[1, x.x, x.y], reverse=True)
 
         print_map(combat_distance_matrix, "combat_distance_matrix_")
 
