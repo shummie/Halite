@@ -1,8 +1,16 @@
 History
 --------
-Version 64 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 65 - ?? / ???? - mu: , sigma: - January ?, 2017
 
-Version 63 - ?? / ???? - mu: , sigma: - January 30, 2017
+Version 64 - ?? / ???? - mu: , sigma: - January 30, 2017
+* v63 uploaded wrong version.
+* Allow rapid production early game, then transiton to normal buildup, then focus strength buildup during earlylate game
+* The above requires a lot of parameter tweaking...
+* Removed some buildup by combat strength
+* Remove a bug - don't enforce parity attacking a cell. was a failed experiment
+* Fixed a bug in get_moves_other. Squares were moving towards border, not combat zones
+
+Version 63 - 5 / 1485 - mu: 50.74, sigma: 0.69 - January 30, 2017
 * Calculate parity each turn
 * Added sorts to stabilize bot so that different positions don't affect outcome
 * Drastically simplify code for moving all other pieces

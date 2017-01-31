@@ -17,7 +17,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v64"
+botname = "shummie v64-2-1"
 strength_buffer = 0
 print_maps = False
 profile = False
