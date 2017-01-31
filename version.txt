@@ -1,8 +1,13 @@
 History
 --------
-Version 65 - ?? / ???? - mu: , sigma: - January ?, 2017
+Version 66 - ?? / ???? - mu: , sigma: - January 31, 2017
 
-Version 64 - ?? / ???? - mu: , sigma: - January 30, 2017
+Version 65 - ?? / ???? - mu: , sigma: - January 31, 2017
+* Try not to break borders when fighting an enemy already unless it's the one we're fighting (does this actually work?)
+* Tweak combat raduis & combat build up slightly
+* Increase timeout threshold.
+
+Version 64 - 4 / 1487 - mu: 52.48, sigma: 0.71 - January 30, 2017
 * v63 uploaded wrong version.
 * Allow rapid production early game, then transiton to normal buildup, then focus strength buildup during earlylate game
 * The above requires a lot of parameter tweaking...
