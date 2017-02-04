@@ -18,9 +18,9 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v66-7-1"
+botname = "shummie v66-8-2"
 print_maps = False
-print_times = True
+print_times = False
 profile = False
 MAX_TURN_TIME = 1.35
 
@@ -300,7 +300,7 @@ class Game:
         if self.starting_player_count > 1 and np.sum(self.combat_zone_map) >= 1:  # Breaks in single player mode otherwise.
             combat_squares_indices = np.transpose(np.nonzero(self.combat_zone_map))
             combat_squares = [self.squares[c[0], c[1]] for c in combat_squares_indices]
-            self.distance_from_combat_zone = self.flood_fill(combat_squares, self.w + self.h, True)
+            self.distance_from_combat_zone = self.flood_fill(combat_squares, max(self.w, self.h), True)
             self.distance_from_combat_zone[self.distance_from_combat_zone == -1] = 9999
             print_map(self.distance_from_combat_zone, "distance_from_combat_zone")
         else:
@@ -429,9 +429,6 @@ class Game:
 
     @timethis
     def get_moves_attack(self):
-
-        # Add'l logic to maximize overkill at borders??
-
         # Attempts to attack all border cells that are in combat
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
 
@@ -478,25 +475,12 @@ class Game:
                         if success:
                             break
             # elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + self.distance_from_combat_zone[square.x, square.y]))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
-            # elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2)))) and (combat_distance_matrix[square.x, square.y] == 2) and (square.move == -1 or square.move == STILL):
-            #     current_distance = combat_distance_matrix[square.x, square.y]
-            #     possible_moves = []
-            #     for n in square.neighbors:
-            #         if self.is_owned_map[n.x, n.y]:
-            #             if combat_distance_matrix[n.x, n.y] == current_distance - 1:
-            #                 if n.move == STILL or n.move == -1:
-            #                     possible_moves.append(n)
-            #     if len(possible_moves) > 0:
-            #         possible_moves.sort(key=lambda square: square.production)
-            #         possible_moves.sort(key=lambda square: self.enemy_strength_map[4, square.x, square.y], reverse=True)
-            #         self.move_square_to_target(square, possible_moves[0], True)
             elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
                 self.move_towards_map_old(square, combat_distance_matrix)
 
             else:
                 if combat_distance_matrix[square.x, square.y] > 1:
                     self.make_move(square, STILL, None)
-
 
     @timethis
     def get_moves_prepare_strength(self):
@@ -629,10 +613,10 @@ class Game:
             if cells_out > 1 and self.combat_zone_map[target.x, target.y]:
                 return False
 
-            if np.sum(self.is_owned_map) <= 10 and self.near_enemy is False:
+            if np.sum(self.is_owned_map) <= 5 and self.near_enemy is False:
                 free_squares = self.is_owned_map * (self.move_map == -1)
             else:
-                if target.strength == 0:  # or target.production >= 5:  # or self.phase == 0:
+                if target.strength == 0 or self.value_production_map[target.x, target.y] <= 2:  # or target.production >= 5:  # or self.phase == 0:
                     free_squares = self.is_owned_map * (self.move_map == -1)
                 else:
                     free_squares = self.is_owned_map * (self.move_map == -1) * (self.strength_map >= self.buildup_multiplier * self.production_map) * (self.moving_into_map == 0)
@@ -1159,30 +1143,6 @@ class Game:
                                 if success:
                                     break
 
-    def overkill_check(self):
-        one_away_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.distance_from_combat_zone == 1))]
-        for sq in one_away_squares:
-            # Isolated squares that are near enemies can stay still.
-            if sq.owner == self.my_id:
-                if sq.is_isolated():
-                    # Check diagonals for isolated.
-                    diagonals = [(-1, -1), (1, 1), (-1, 1), (1, -1)]
-                    should_still = True
-                    for (dx, dy) in diagonals:
-                        dsq = self.squares[(sq.x + dx) % self.w, (sq.y + dy) % self.h]
-                        if dsq.owner == self.my_id and dsq.is_isolated() and (dsq.move == 4 or dsq.move == -1):
-                            should_still = False
-                            break
-                    if should_still:
-                        self.make_move(sq, STILL, None)
-
-        # two_away_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.distance_from_combat_zone == 2))]
-        # for sq in two_away_squares:
-        #     if sq.owner == self.my_id:
-        #         if sq.move != -1 and sq.move != 4:
-        #             if sq.target.move != -1 and sq.target.move != 4 and sq.target.strength > 10:
-        #                 self.make_move(sq, STILL, None)
-
 
 # ==============================================================================
 # Square class
@@ -1201,13 +1161,6 @@ class Square:
         self.moving_here = []
         self.far_target = None
         self.parity = (x + y) % 2
-
-    def is_isolated(self):
-        isolated = True
-        for n in self.neighbors:
-            if n.owner == self.owner:
-                isolated = False
-        return isolated
 
     def after_init_update(self):
         # Should only be called after all squares in game have been initialized.
@@ -1240,58 +1193,6 @@ class Square:
         self.target = None
         self.moving_here = []
         self.far_target = None
-
-    def overkill_safe(self):
-        # Is it safe to move to this square??
-        # STILL
-        move_away = []
-        check = [self.north, self.west, self.east, self.south, self]
-        for n in check:
-            for m in n.moving_here:
-                move_away.append(n)
-            if len(move_away) > 1:
-                return (False, move_away)
-        # NORTH
-        move_away = []
-        check = [self.north.north, self.north.west, self.north.east, self.north, self]
-        for n in check:
-            if n.owner == self.my_id and (n.move == -1 or n.move == 4):
-                move_away.append(n)
-            for m in n.moving_here:
-                move_away.append(n)
-            if len(move_away) > 1:
-                return (False, move_away)
-        # South
-        move_away = []
-        check = [self.south.south, self.south.west, self.south.east, self.south, self]
-        for n in check:
-            if n.owner == self.my_id and (n.move == -1 or n.move == 4):
-                move_away.append(n)
-            for m in n.moving_here:
-                move_away.append(n)
-            if len(move_away) > 1:
-                return (False, move_away)
-        # West
-        move_away = []
-        check = [self.west.south, self.west.north, self.west.west, self.west, self]
-        for n in check:
-            if n.owner == self.my_id and (n.move == -1 or n.move == 4):
-                move_away.append(n)
-            for m in n.moving_here:
-                move_away.append(n)
-            if len(move_away) > 1:
-                return (False, move_away)
-        # East
-        move_away = []
-        check = [self.east.south, self.east.north, self.east.east, self.east, self]
-        for n in check:
-            if n.owner == self.my_id and (n.move == -1 or n.move == 4):
-                move_away.append(n)
-            for m in n.moving_here:
-                move_away.append(n)
-            if len(move_away) > 1:
-                return (False, move_away)
-        return (True, [])
 
 
 ####################
@@ -1413,7 +1314,6 @@ def game_loop():
         last_collision_check = collision_check
         collision_check = game.last_resort_strength_check()
 
-    game.overkill_check()
 
 # #####################
 # Game run-time code #

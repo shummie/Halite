@@ -18,9 +18,9 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v66-1-1"
+botname = "shummie v66-9-1"
 print_maps = False
-print_times = True
+print_times = False
 profile = False
 MAX_TURN_TIME = 1.35
 
@@ -151,7 +151,7 @@ class Game:
         # self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 7)
         self.buildup_multiplier = self.buildup_multiplier - (self.distance_from_border ** 0.4)
         # self.combat_radius = int(min(max(5, self.percent_owned * self.w / 2), self.w // 2))
-        self.combat_radius = 7
+        self.combat_radius = 10
 
         if self.percent_owned > 0.6:
             self.buildup_multiplier -= 1
@@ -168,6 +168,7 @@ class Game:
 
         if self.percent_owned > 0.10:
             self.buildup_multiplier += 4
+            # self.combat_radius += self.percent_owned / 0.15
 
         self.buildup_multiplier = np.minimum(self.buildup_multiplier, 230 / self.production_map_1)
 
@@ -432,6 +433,7 @@ class Game:
         # Attempts to attack all border cells that are in combat
         combat_zone_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(self.combat_zone_map))]
 
+        combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[3, x.x, x.y], reverse=True)
         combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
         combat_zone_squares.sort(key=lambda x: self.enemy_strength_map[1, x.x, x.y], reverse=True)
 
@@ -448,6 +450,7 @@ class Game:
         combat_squares = [self.squares[c[0], c[1]] for c in np.transpose(np.nonzero(combat_distance_matrix))]
         combat_squares = [s for s in combat_squares if s.owner == self.my_id]
         combat_squares.sort(key=lambda x: x.strength, reverse=True)
+        combat_squares.sort(key=lambda x: self.enemy_strength_map[3, x.x, x.y], reverse=True)
         combat_squares.sort(key=lambda x: self.enemy_strength_map[2, x.x, x.y], reverse=True)
         combat_squares.sort(key=lambda x: self.enemy_strength_map[1, x.x, x.y], reverse=True)
 
@@ -475,7 +478,7 @@ class Game:
                         if success:
                             break
             # elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + self.distance_from_combat_zone[square.x, square.y]))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
-            elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
+            elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] ))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
                 self.move_towards_map_old(square, combat_distance_matrix)
 
             else:

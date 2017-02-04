@@ -1,8 +1,22 @@
 History
 --------
-Version 66 - ?? / ???? - mu: , sigma: - January 31, 2017
+Version 66 - ?? / ???? - mu: , sigma: - February 4, 2017
 
-Version 65 - ?? / ???? - mu: , sigma: - January 31, 2017
+Version 66 - ?? / ???? - mu: , sigma: - February 4, 2017
+* added a timethis decorator function
+* Lots of minor code cleanup
+* Removed far_target functionality
+* Enforce the neutrality pact
+* enemy_strength_map adds 0.001 so that we can check for enemy border when str = 0
+* reduce global weight significantly
+* Detect which enemies we are in combat with and breakthrough borders only for those enemies
+* Consolidated some flood-fill functions
+* Changed percentile cut off for get_production_moves to eliminate squares instead of moves.
+* Allow rapid growth up to 5 squares and for squares with very good values
+* Added an overkill_check to try to avoid movements that would increase our overkill damage taken
+* Added some helper functions to Square class. Not all are used in this version.
+
+Version 65 - 4 / 1534 - mu: 52.71, sigma: 0.67 - January 31, 2017
 * Try not to break borders when fighting an enemy already unless it's the one we're fighting (does this actually work?)
 * Tweak combat raduis & combat build up slightly
 * Increase timeout threshold.
