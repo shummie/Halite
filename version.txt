@@ -1,13 +1,19 @@
 History
 --------
-Version 67 - ?? / ???? - mu: , sigma: - February ?, 2017
+Version 68 - ?? / ???? - mu: , sigma: - February ?, 2017
+*
+
+Version 67 - ?? / ???? - mu: , sigma: - February 5, 2017
 * Fixed a bug where last_resort_strength_check was always moving WEST.
 * Fixed a bug in stop_swaps to allow larger strength squares to move towards target.
 * Some add'l sorting to mitigate variance in starting position
 * Breakthrough 1 square at a time and only if sufficiently away from a combat zone.
 * Move to nearest "neutral" square instead of border square.
+* Tweak dijkstra cost function to prefer squares with lower strength very slightly (I hope)
+* Attempt varying global multiplier by gini coefficient of map (prod/str)
+* Add add'l checks to stop isolated squares from moving (or not moving)
 
-Version 66 - ?? / ???? - mu: , sigma: - February 4, 2017
+Version 66 - 2 / 1545 - mu: 53.71, sigma: 0.7 - February 4, 2017
 * added a timethis decorator function
 * Lots of minor code cleanup
 * Removed far_target functionality
