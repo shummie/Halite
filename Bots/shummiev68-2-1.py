@@ -1,3 +1,5 @@
+## NOTE: This version is testing gini coefficient to vary gmult
+
 # ==============================================================================
 # Imports
 # ==============================================================================
@@ -17,11 +19,11 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v68"
+botname = "shummie v68-2-1"
 print_maps = False
 print_times = False
 profile = False
-MAX_TURN_TIME = 1.42
+MAX_TURN_TIME = 1.35
 
 
 def print_map(npmap, name):
@@ -349,11 +351,11 @@ class Game:
             gini = (len(gini_values) * gini_values[-1] - 2 * np.trapz(gini_values) + gini_values[0]) / len(gini_values) / gini_values[-1]
             logging.debug("Frame:" + str(self.frame) + " Gini: " + str(gini))
             if gini > 0.5:
-                self.g_mult = 0.65
+                self.g_mult = 50.65
             else:
-                self.g_mult = 0.25
+                self.g_mult = 50.25
 
-        self.base_value_map = np.divide(self.production_map_01, self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
+        self.base_value_map = np.divide(self.production_map_01 + np.sum(self.production_map * self.is_owned_map), self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
         # Each neutral cell gets assigned to the closest border non-combat cell
         global_targets_indices = np.transpose(np.nonzero(self.is_neutral_map - self.combat_zone_map))
         global_targets = [self.squares[c[0], c[1]] for c in global_targets_indices]
@@ -372,7 +374,7 @@ class Game:
 
         self.value_production_map = 1 / np.maximum(self.base_value_map + self.global_border_map * self.g_mult, 0.001)
 
-        self.value_production_map *= (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] < 1)
+        self.value_production_map *= (self.border_map - self.combat_zone_map) * (self.enemy_strength_map[1] == 0)
         self.value_production_map[self.value_production_map == 0] = 9999
         turns_left = self.max_turns - self.frame
         recover_threshold = turns_left * 0.6
@@ -776,7 +778,7 @@ class Game:
                         n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for d, n in n_neighbors:
-                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] < 1:
+                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -942,7 +944,7 @@ class Game:
                         n_neighbors.sort(key=lambda x: self.distance_from_border[x[1].x, x[1].y], reverse=True)
                         # Ok, none of these has worked, let's try moving to a neighbor square instead then.
                         for d, n in n_neighbors:
-                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] < 1:
+                            if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
                                 # Can we move into this square safely?
                                 future_n_t_strength = target.strength
                                 if n.move == STILL or n.move == -1:
@@ -1105,7 +1107,7 @@ class Game:
                 for d in range(0, 4):
                     # Move to the lowest strength neighbor. this might cause a collision but we'll resolve it with multiple iterations
                     n = sq.neighbors[d]
-                    if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] < 1:
+                    if n.owner == self.my_id and self.enemy_strength_map[2, n.x, n.y] == 0:
                         possible_paths.append((d, n, projected_strength_map[n.x, n.y]))
                     elif n.owner == 0:
                         # Try attacking a bordering cell
@@ -1157,7 +1159,7 @@ class Game:
         for s in squares:
             if (timer() - game.start) > MAX_TURN_TIME:
                 return
-            if (self.enemy_strength_map[2, s.x, s.y] < 1) and s.parity != game.parity and (s.move != STILL and s.move != -1):
+            if (self.enemy_strength_map[2, s.x, s.y] == 0) and s.parity != game.parity and (s.move != STILL and s.move != -1):
                 self.make_move(s, STILL)
                 future_strength = s.strength + sum(x.strength for x in s.moving_here)
                 if future_strength > self.str_cap:
@@ -1165,7 +1167,7 @@ class Game:
                     while future_strength > 255:
                         future_strength -= s.moving_here[0].strength
                         self.make_move(s.moving_here[0], STILL)
-            elif (self.enemy_strength_map[2, s.x, s.y] > 0.5) and (s.move == STILL or s.move == -1):
+            elif (self.enemy_strength_map[2, s.x, s.y] > 0) and (s.move == STILL or s.move == -1):
                 # Try to capture a neutral cell
                 neutral_targets = []
                 friendly_targets = []

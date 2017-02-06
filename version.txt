@@ -1,9 +1,11 @@
 History
 --------
-Version 68 - ?? / ???? - mu: , sigma: - February ?, 2017
-*
+Version 69 - ?? / ???? - mu: , sigma: - February ?, 2017
 
-Version 67 - ?? / ???? - mu: , sigma: - February 5, 2017
+Version 68 - ?? / ???? - mu: , sigma: - February 6, 2017
+* undo - Tweak dijkstra cost function to prefer squares with lower strength very slightly (I hope)
+
+Version 67 - 3 / 1551 - mu: 53.52, sigma: 0.7 - February 5, 2017
 * Fixed a bug where last_resort_strength_check was always moving WEST.
 * Fixed a bug in stop_swaps to allow larger strength squares to move towards target.
 * Some add'l sorting to mitigate variance in starting position
