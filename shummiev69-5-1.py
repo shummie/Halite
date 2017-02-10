@@ -18,8 +18,8 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v69-3-6"
-print_maps = False
+botname = "shummie v69-5-1"
+print_maps = True
 print_times = False
 profile = False
 MAX_TURN_TIME = 1.35
@@ -28,7 +28,7 @@ MAX_TURN_TIME = 1.35
 def print_map(npmap, name):
     directory = "Maps/"
     if print_maps:
-        np.savetxt(directory + name + str(game.frame + 1) + ".txt", npmap)
+        np.savetxt(directory + name + str(game.frame - 1) + ".txt", npmap)
 
 
 def timethis(f):
@@ -603,11 +603,11 @@ class Game:
                     self.proj_own_str[t.x, t.y] += sq.strength
                     t_dmg_done, t_dmg_taken = self.simulate_combat()
                     ttuplist.append((t, t_dmg_done, t_dmg_taken))
-                    self.proj_own_str -= sq.strength
+                    self.proj_own_str[sq.x, sq.y] -= sq.strength
                 ttuplist.sort(key=lambda x: self.distance_from_combat_zone[x[0].x, x[0].y])
                 ttuplist.sort(key=lambda x: x[1], reverse=True)
                 ttuplist.sort(key=lambda x: x[1] - 0.8 * x[2], reverse=True)
-
+                success = False
                 for ttup in ttuplist:
                     t = ttup[0]
                     if t == sq:
@@ -691,8 +691,8 @@ class Game:
             else:
                     self.make_move(sq, STILL)
                     self.mark_unsafe(sq, sq)
-
-
+        print_map(self.is_owned_map * self.strength_map, "curr_own_str_")
+        print_map(self.proj_own_str, "proj_own_str_")
 
     @timethis
     def get_moves_prepare_strength(self):
