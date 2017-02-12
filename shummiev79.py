@@ -19,7 +19,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v80"
+botname = "shummie v79"
 print_maps = False
 print_times = False
 profile = False
@@ -776,7 +776,6 @@ class Game:
 
     @timethis
     def get_moves_breakthrough(self):
-        return
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
         # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
         # We are only looking at squares which are next to the enemy already.

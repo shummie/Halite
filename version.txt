@@ -1,8 +1,50 @@
 History
 --------
-Version 69 - ?? / ???? - mu: , sigma: - February ?, 2017
+Version 80 - ?? / ???? - mu: , sigma: - February 12, 2017
+*
 
-Version 68 - ?? / ???? - mu: , sigma: - February 6, 2017
+Version 79 - ?? / ???? - mu: , sigma: - February 12, 2017
+* Minor bugfixes to stop swap
+* Maybe new combat is better... increase weight.
+
+Version 78 - 4 / ???? - mu: 52.6, sigma: 0.72 - February 11, 2017
+* I've changed and unchanged so many things I've lost track. If this isn't better or as good as the last 10 versions I've screwed up badly.
+
+Version 77 - 7 / 1590 - mu: 50.86, sigma: 0.8 - February 11, 2017
+* Stop_swaps tweak again
+* revert gini global, seems to do poorly.
+
+Version 76 - 9 / 1590 - mu: 50.47, sigma: 0.92 - February 11, 2017
+* Scale Gini global parameter
+* remove parity (accidentally brought it back in)
+
+Version 75 - 6 / 1590 - mu: 52.5, sigma: 0.99 - February 11, 2017
+* Don't try fancy combat when ahead (in strength at least)
+
+Version 74 - 3 / 1590 - mu: 53.43, sigma: 0.82 - February 11, 2017
+* Bugfix - forgot to include a parameter
+
+Version 73 - 7 / 1590 - mu: 51.69, sigma: 1.08 - February 11, 2017
+* Turn off print maps!
+
+Version 72 - 1585 / 1590 - mu: 9.49, sigma: 3.09 - February 11, 2017
+* Bugfix
+* Hopefully squashed the buildup_multiplier bug as well.
+
+Version 71 - 1546 / 1590 - mu: 11.79, sigma: 1.25 - February 11, 2017
+* More minor fixes, stop swaps, last turn capture. more time checks
+
+Version 70 - 4 / 1589 - mu: 53.66, sigma: 0.77 - February 11, 2017
+* Minor tweaks, clean up, try to fix standstill games
+* Still haven't fixed last turn captures
+
+Version 69 - 3 / 1589 - mu: 53.91, sigma: 0.73 - February 11, 2017
+* Reduce max turn time slightly
+* Reduce combat radius
+* Fix non aggression pact that I broke in v68
+* Completely new combat. Try to reduce overkill. Note: safe to move needs to be fixed for v70
+
+Version 68 - 7 / 1589 - mu: 51.12, sigma: 0.68 - February 6, 2017
 * undo - Tweak dijkstra cost function to prefer squares with lower strength very slightly (I hope)
 
 Version 67 - 3 / 1551 - mu: 53.52, sigma: 0.7 - February 5, 2017

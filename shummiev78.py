@@ -19,7 +19,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v80"
+botname = "shummie v78"
 print_maps = False
 print_times = False
 profile = False
@@ -192,7 +192,7 @@ class Game:
                 if p_str > high_str:
                     high_str = p_str
                     p_high = p
-        if high_str * 1.2 < self_str:
+        if high_str * 0.8 < self_str:
             self.highest_strength = True
 
     def create_one_time_maps(self):
@@ -546,7 +546,7 @@ class Game:
                         should_still = False
                         enemy_count = 0
                         for n in square.get_neighbors(2):
-                            if n.owner != 0 and n.owner != self.my_id and n.strength >= square.strength / 1.5:
+                            if n.owner != 0 and n.owner != self.my_id and n.strength > n.production * 2:
                                 enemy_count += 1
                         if enemy_count > 1:
                             should_still = True
@@ -776,7 +776,6 @@ class Game:
 
     @timethis
     def get_moves_breakthrough(self):
-        return
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
         # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
         # We are only looking at squares which are next to the enemy already.
@@ -1382,7 +1381,7 @@ class Game:
                                         if s.strength - s.target.strength >= 0:
                                             self.make_move(s.target, STILL)
                                             self.make_move(s, STILL)
-                                elif self.distance_from_border[s.x, s.y] < self.distance_from_border[s.target.x, s.target.y]:
+                                elif self.distance_from_border[s.x, s.y] <= self.distance_from_border[s.target.x, s.target.y]:
                                     if (s.strength - s.target.strength) >= 0:
                                         self.make_move(s.target, STILL)
                                         self.make_move(s, STILL)

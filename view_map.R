@@ -36,9 +36,9 @@ map_at_turn_x(39)
 
 
 
-as.matrix(data.table::fread("recover_0_map_80.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+as.matrix(data.table::fread("buildup_multiplier_2.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
 as.matrix(data.table::fread("value_map_80.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
 data.table::fread("value_prod_map_80.txt") %>% apply(2, function(x) {x[x == 9999] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
 as.matrix(data.table::fread("buildup_186.txt")) %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
-data.table::fread("distance_from_enemy_120.txt") %>% apply(2, function(x) {x[x == 9999] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
+data.table::fread("buildup_multiplier_2.txt") %>% apply(2, function(x) {x[x == 9999] <- NA; x}) %>%  as.matrix() %>% rotate() %>% {plot_ly(z = ., type="heatmap")}
 

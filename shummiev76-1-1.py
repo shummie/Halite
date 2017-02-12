@@ -3,7 +3,6 @@
 # ==============================================================================
 import functools
 from functools import wraps
-from collections import deque
 import cProfile
 import itertools
 import logging
@@ -19,7 +18,7 @@ import copy
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v80"
+botname = "shummie v76-1-1"
 print_maps = False
 print_times = False
 profile = False
@@ -60,7 +59,7 @@ class Game:
 
         self.create_squares_list()
         self.frame = -1
-        self.max_turns = math.ceil(10 * ((self.w * self.h) ** 0.5))
+        self.max_turns = 10 * ((self.w * self.h) ** 0.5)
 
         self.get_frame()
 
@@ -192,7 +191,7 @@ class Game:
                 if p_str > high_str:
                     high_str = p_str
                     p_high = p
-        if high_str * 1.2 < self_str:
+        if high_str * 1.1 < self_str:
             self.highest_strength = True
 
     def create_one_time_maps(self):
@@ -387,11 +386,11 @@ class Game:
             gini_values = np.cumsum(sorted(gini_values))
             gini = (len(gini_values) * gini_values[-1] - 2 * np.trapz(gini_values) + gini_values[0]) / len(gini_values) / gini_values[-1]
             logging.debug("Frame:" + str(self.frame) + " Gini: " + str(gini))
-            # self.g_mult = 0.25 + (gini - 0.3) * 2
-            if gini > 0.5:
-                self.g_mult = 0.65
-            else:
-                self.g_mult = 0.25
+            self.g_mult = 0.25 + (gini - 0.3) * 2
+            # if gini > 0.5:
+            #     self.g_mult = 0.65
+            # else:
+            #     self.g_mult = 0.25
 
         self.base_value_map = np.divide(self.production_map_01, self.strength_map_1) * (self.is_neutral_map - self.combat_zone_map)
         # Each neutral cell gets assigned to the closest border non-combat cell
@@ -456,7 +455,7 @@ class Game:
         self.in_combat_with = list(set(self.in_combat_with))
 
     def update_focus_territory(self):
-        self.production_cells_out = 1
+        self.production_cells_out = 10
         self.combat_radius = min(self.turns_left, self.combat_radius)
         self.value_production_map = (self.strength_map * self.is_neutral_map)
         self.value_production_map[self.value_production_map == 0] = 9999
@@ -464,9 +463,9 @@ class Game:
 
     @timethis
     def get_moves(self):
-        if self.turns_left <= 3:
+        if self.turns_left == 1:
             self.percentile = 1
-        if self.turns_left < 1:
+        elif self.turns_left == 0:
             self.update_focus_territory()
         # This is the main logic controlling code.
         # Find super high production cells
@@ -540,13 +539,13 @@ class Game:
                 return
             if (combat_distance_matrix[square.x, square.y] == 1):
                 if (square.strength > square.production) and (square.move == -1):
-                    if square.strength > 40 and square.is_isolated():
+                    if square.strength > 20 and square.strength < 100 and square.is_isolated():
                         # Check diagonals & Plus for isolated.
                         diagonals = [(-1, -1), (1, 1), (-1, 1), (1, -1), (0, 2), (-2, 0), (2, 0), (0, -2)]
                         should_still = False
                         enemy_count = 0
                         for n in square.get_neighbors(2):
-                            if n.owner != 0 and n.owner != self.my_id and n.strength >= square.strength / 1.5:
+                            if n.owner != 0 and n.owner != self.my_id and n.strength > n.production * 2:
                                 enemy_count += 1
                         if enemy_count > 1:
                             should_still = True
@@ -611,7 +610,7 @@ class Game:
             #     self.make_move(square, STILL)
             # elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + self.distance_from_combat_zone[square.x, square.y]))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
             # elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2))) or square.strength > 250) and (square.parity == self.parity) and square.move == -1 and square.moving_here == []:
-            elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2))) or square.strength > 250) and square.move == -1 and square.moving_here == [] and combat_distance_matrix[square.x, square.y] > 1 and (square.parity == self.parity):
+            elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2))) or square.strength > 250) and square.move == -1 and square.moving_here == [] and combat_distance_matrix[square.x, square.y] > 1:
                 # elif ((square.strength > (square.production * (self.buildup_multiplier[square.x, square.y] + 2))) or square.strength > 250) and square.move == -1 and square.moving_here == []:
                 # elif square.move == -1 and square.moving_here == [] and square.strength > self.buildup_multiplier[square.x, square.y] + 7:
                 current_distance = combat_distance_matrix[square.x, square.y]
@@ -776,7 +775,6 @@ class Game:
 
     @timethis
     def get_moves_breakthrough(self):
-        return
         # Determine if we should bust through and try to open up additional lanes of attack into enemy territory
         # Best to have a separate lane. so we should evaluate squares that are not next to already open channels.
         # We are only looking at squares which are next to the enemy already.
@@ -1236,11 +1234,11 @@ class Game:
     def flood_fill_until_target(self, source, destination, friendly_only):
         # Does a BFS flood fill to find shortest distance from source to target.
         # Starts the fill AT destination and then stops once we hit the target.
-        q = deque([destination])
+        q = [destination]
         distance_matrix = np.ones((self.w, self.h), dtype=int) * -1
         distance_matrix[destination.x, destination.y] = 0
         while len(q) > 0 and distance_matrix[source.x, source.y] == -1:
-            current = q.popleft()
+            current = q.pop(0)
             current_distance = distance_matrix[current.x, current.y]
             for neighbor in current.neighbors:
                 if distance_matrix[neighbor.x, neighbor.y] == -1:
@@ -1251,14 +1249,14 @@ class Game:
         return distance_matrix
 
     def flood_fill_to_border(self, sources):
-        q = deque(sources)
+        q = sources
         distance_matrix = np.ones((self.w, self.h)) * -1
         if len(sources) == 0:
             return distance_matrix
         for sq in sources:
             distance_matrix[sq.x, sq.y] = 0
         while len(q) > 0:
-            c = q.popleft()
+            c = q.pop(0)
             c_dist = distance_matrix[c.x, c.y]
             if c.owner == self.my_id:
                 for n in c.neighbors:
@@ -1268,7 +1266,7 @@ class Game:
         return distance_matrix
 
     def flood_fill_enemy_map(self, sources):
-        q = deque(sources)
+        q = sources
         distance_matrix = np.ones((self.w, self.h)) * -1
         if len(sources) == 0:
             return distance_matrix
@@ -1277,7 +1275,7 @@ class Game:
             distance_matrix[sq.x, sq.y] = 0
 
         while len(q) > 0:
-            c = q.popleft()
+            c = q.pop(0)
             c_dist = distance_matrix[c.x, c.y]
             for n in c.neighbors:
                 if distance_matrix[n.x, n.y] == -1 or distance_matrix[n.x, n.y] > (c_dist + 1):
@@ -1289,7 +1287,7 @@ class Game:
 
     def flood_fill(self, sources, max_distance=999, friendly_only=True):
         # sources is a list of Squares
-        q = deque(sources)
+        q = sources
         distance_matrix = np.ones((self.w, self.h)) * -1
         if len(sources) == 0:
             return distance_matrix
@@ -1298,7 +1296,7 @@ class Game:
             distance_matrix[sq.x, sq.y] = 0
 
         while len(q) > 0:
-            c = q.popleft()
+            c = q.pop(0)
             c_dist = distance_matrix[c.x, c.y]
             for n in c.neighbors:
                 if distance_matrix[n.x, n.y] == -1 or distance_matrix[n.x, n.y] > (c_dist + 1):
@@ -1379,10 +1377,10 @@ class Game:
                             if s.strength >= s.target.strength:
                                 if self.distance_from_combat_zone[s.x, s.y] <= self.combat_radius:
                                     if self.distance_from_combat_zone[s.x, s.y] <= self.distance_from_combat_zone[s.target.x, s.target.y]:
-                                        if s.strength - s.target.strength >= 0:
+                                        if abs(s.strength - s.target.strength) <= 100:
                                             self.make_move(s.target, STILL)
                                             self.make_move(s, STILL)
-                                elif self.distance_from_border[s.x, s.y] < self.distance_from_border[s.target.x, s.target.y]:
+                                elif self.distance_from_border[s.x, s.y] <= self.distance_from_border[s.target.x, s.target.y]:
                                     if (s.strength - s.target.strength) >= 0:
                                         self.make_move(s.target, STILL)
                                         self.make_move(s, STILL)
