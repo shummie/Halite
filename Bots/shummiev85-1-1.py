@@ -15,10 +15,11 @@ import sys
 import time
 from timeit import default_timer as timer
 
+
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v85"
+botname = "shummie v85-1-1"
 print_maps = False
 print_times = False
 profile = False

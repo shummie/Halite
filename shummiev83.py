@@ -9,16 +9,18 @@ import itertools
 import logging
 import math
 import numpy as np
+import random
 import scipy.sparse
 import scipy.ndimage.filters
 import sys
 import time
 from timeit import default_timer as timer
 
+
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v85"
+botname = "shummie v83"
 print_maps = False
 print_times = False
 profile = False
@@ -145,7 +147,8 @@ class Game:
     def set_configs(self):
         self.str_cap = 255
         self.buildup_multiplier = np.minimum(np.maximum(self.production_map, 4), 9)
-        self.combat_radius = 6
+        self.pre_combat_threshold = -3
+        self.combat_radius = 5
         self.production_cells_out = 15
         self.percentile = 0.85
 
@@ -155,7 +158,8 @@ class Game:
         self.combat_radius = 6
 
         if self.percent_owned > 0.6:
-            self.buildup_multiplier += 1
+            self.buildup_multiplier -= 1
+            self.pre_combat_threshold = 0
             self.combat_radius = 10
 
         elif self.my_production_sum / self.next_highest_production_sum > 1.1:
@@ -188,8 +192,8 @@ class Game:
                 p_str = np.sum((self.owner_map == p) * (self.strength_map))
                 if p_str > high_str:
                     high_str = p_str
-        if high_str * 1.75 < self_str:
-            self.highest_strength = True
+        # if high_str * 1.5 < self_str:
+        #     self.highest_strength = True
 
     def create_one_time_maps(self):
         self.production_map_01 = np.maximum(self.production_map, 0.1)
@@ -438,7 +442,7 @@ class Game:
     def get_moves(self):
         if self.turns_left <= 9:
             self.percentile = 1
-        if self.turns_left < 5:
+        if self.turns_left < 6:
             self.update_focus_territory()
         # This is the main logic controlling code.
         # 1 - Find combat zone cells and attack them.
@@ -602,8 +606,6 @@ class Game:
 
         # TODO: Should sort by amount of overkill damage possible.
         for square in combat_zone_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             self.attack_cell(square, 1)
 
         # Get a list of all squares within x spaces of a combat zone.
@@ -617,8 +619,6 @@ class Game:
         print_map(combat_distance_matrix, "combat_distance_matrix_")
 
         for square in combat_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             if (square.strength > 0) and (combat_distance_matrix[square.x, square.y] == 1) and (square.move == -1 or square.move == STILL):
                 targets = []
                 alt_targets = []
@@ -702,7 +702,7 @@ class Game:
 
         # Find the lowest strength player and see if we can attack it.
 
-        # max_str = max(score_str, key=score_str.get)
+        max_str = max(score_str, key=score_str.get)
         # if self.my_id != max_str:
         #     return  # Build up strength
 
@@ -714,8 +714,6 @@ class Game:
         enemy_border_squares.sort(key=lambda x: self.enemy_strength_map[4, x.x, x.y] / self.own_strength_map[4, x.x, x.y])
 
         for sq in enemy_border_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             success = False
             for n in sq.neighbors:
                 if n.owner == min_str:

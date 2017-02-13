@@ -9,16 +9,18 @@ import itertools
 import logging
 import math
 import numpy as np
+import random
 import scipy.sparse
 import scipy.ndimage.filters
 import sys
 import time
 from timeit import default_timer as timer
 
+
 # ==============================================================================
 # Variables
 # ==============================================================================
-botname = "shummie v85"
+botname = "shummie v84-1-1"
 print_maps = False
 print_times = False
 profile = False
@@ -602,8 +604,6 @@ class Game:
 
         # TODO: Should sort by amount of overkill damage possible.
         for square in combat_zone_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             self.attack_cell(square, 1)
 
         # Get a list of all squares within x spaces of a combat zone.
@@ -617,8 +617,6 @@ class Game:
         print_map(combat_distance_matrix, "combat_distance_matrix_")
 
         for square in combat_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             if (square.strength > 0) and (combat_distance_matrix[square.x, square.y] == 1) and (square.move == -1 or square.move == STILL):
                 targets = []
                 alt_targets = []
@@ -702,7 +700,7 @@ class Game:
 
         # Find the lowest strength player and see if we can attack it.
 
-        # max_str = max(score_str, key=score_str.get)
+        max_str = max(score_str, key=score_str.get)
         # if self.my_id != max_str:
         #     return  # Build up strength
 
@@ -714,8 +712,6 @@ class Game:
         enemy_border_squares.sort(key=lambda x: self.enemy_strength_map[4, x.x, x.y] / self.own_strength_map[4, x.x, x.y])
 
         for sq in enemy_border_squares:
-            if (timer() - game.start) > MAX_TURN_TIME:
-                return
             success = False
             for n in sq.neighbors:
                 if n.owner == min_str:

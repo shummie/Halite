@@ -386,7 +386,7 @@ class Game:
             gini_values = gini_values[np.where(gini_values > 0)]
             gini_values = np.cumsum(sorted(gini_values))
             gini = (len(gini_values) * gini_values[-1] - 2 * np.trapz(gini_values) + gini_values[0]) / len(gini_values) / gini_values[-1]
-            logging.debug("Frame:" + str(self.frame) + " Gini: " + str(gini))
+            # logging.debug("Frame:" + str(self.frame) + " Gini: " + str(gini))
             # self.g_mult = 0.25 + (gini - 0.3) * 2
             if gini > 0.5:
                 self.g_mult = 0.65
@@ -454,6 +454,9 @@ class Game:
                         self.in_combat_with.append(n.owner)
 
         self.in_combat_with = list(set(self.in_combat_with))
+
+        self.squares_owned = np.sum(self.is_owned_map)
+        self.squares_in_combat = np.sum(self.combat_zone_map)
 
     def update_focus_territory(self):
         self.production_cells_out = 1
@@ -540,7 +543,7 @@ class Game:
                 return
             if (combat_distance_matrix[square.x, square.y] == 1):
                 if (square.strength > square.production) and (square.move == -1):
-                    if square.strength > 40 and square.is_isolated():
+                    if square.strength > 30 and square.is_isolated():
                         # Check diagonals & Plus for isolated.
                         diagonals = [(-1, -1), (1, 1), (-1, 1), (1, -1), (0, 2), (-2, 0), (2, 0), (0, -2)]
                         should_still = False
@@ -634,17 +637,23 @@ class Game:
                     self.mark_unsafe(square, square)
 
     def mark_unsafe(self, source, sq):
-        if self.distance_from_enemy[sq.x, sq.y] <= 2 and source.strength > 10:
+        threshold_own = 25
+        threshold_enemy = 50
+        if self.squares_in_combat <= 2:
+            threshold_own = 0
+            threshold_enemy = 0
+
+        if self.distance_from_enemy[sq.x, sq.y] <= 2 and source.strength > threshold_own:
             # Check self
-            if self.enemy_strength_map[2, sq.x, sq.y] > 50:
-                self.safe_to_move[sq.x, sq.y] = 0   # But.. is a square that's attacking REALLY unsafe?
+            # if self.enemy_strength_map[2, sq.x, sq.y] > threshold_enemy:
+            #    self.safe_to_move[sq.x, sq.y] = 0   # But.. is a square that's attacking REALLY unsafe?
             for n in sq.neighbors:
                 if n.owner == 0 and n.strength > 0:
                     continue
-                if self.distance_from_enemy[n.x, n.y] <= 2 and self.enemy_strength_map[2, n.x, n.y] > 50:
+                if self.distance_from_enemy[n.x, n.y] <= 2 and self.enemy_strength_map[2, n.x, n.y] > threshold_enemy:
                     self.safe_to_move[n.x, n.y] = 0
                 for n2 in n.neighbors:
-                    if self.distance_from_enemy[n2.x, n2.y] <= 2 and self.enemy_strength_map[2, n2.x, n2.y] > 50:
+                    if self.distance_from_enemy[n2.x, n2.y] <= 2 and self.enemy_strength_map[2, n2.x, n2.y] > threshold_enemy:
                         self.safe_to_move[n2.x, n2.y] = 0
 
     @timethis
